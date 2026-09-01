@@ -1,0 +1,52 @@
+# Python & PyTorch
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+.env
+!.env.example
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Heavy Model Checkpoints & Datasets (Track with DVC or download script)
+*.pt
+*.pth
+*.onnx
+*.bin
+*.h5
+*.tar.gz
+*.zip
+ml/checkpoints/*.pt
+ml/checkpoints/*.pth
+!ml/checkpoints/.gitkeep
+speech/speaker_verification/weights/*.pt
+!speech/speaker_verification/weights/.gitkeep
+
+# Logs
+logs/
+*.log
