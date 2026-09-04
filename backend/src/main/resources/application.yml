@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: voiceshield-backend
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+voiceshield:
+  ml-service:
+    url: http://localhost:8001
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
+  cors:
+    allowed-origins:
+      - "http://localhost:5173"
+      - "http://localhost:3000"
+      - "http://127.0.0.1:5173"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+logging:
+  level:
+    root: INFO
+    com.voiceshield: DEBUG

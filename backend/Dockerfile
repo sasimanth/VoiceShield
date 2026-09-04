@@ -1,18 +1,20 @@
-FROM python:3.11-slim
-
+# Multi-stage Java 21 Build for VoiceShield Backend
+FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libsndfile1 \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Copy risk-engine and install to local maven cache
+COPY risk_engine ./risk_engine
+RUN cd risk_engine && mvn clean install -DskipTests
 
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Build Spring Boot Backend
+COPY backend ./backend
+RUN cd backend && mvn clean package -DskipTests
 
-COPY . .
+# Lightweight Production Runtime
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
 
-ENV PYTHONPATH=/app
+COPY --from=builder /app/backend/target/*.jar app.jar
 
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
