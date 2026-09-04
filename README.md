@@ -10,14 +10,14 @@
 
 The repository is modularly structured to allow all **6 team members** to work simultaneously in their dedicated directories without merge conflicts:
 
-| Team Member | Role | Primary Directory | Primary Ownership & Deliverables |
-| :--- | :--- | :--- | :--- |
-| **Person 1** | **AI/ML Engineer** | [`ml/`](ml/) | Deepfake / synthetic speech detection, AASIST neural model, spectral feature extraction, model weights & checkpoint training. |
-| **Person 2** | **Speech & Speaker Verification Engineer** | [`speech/`](speech/) | Audio ingestion & VAD preprocessing, Prosody analysis (pitch $F_0$, jitter, shimmer, rhythm), and Speaker Verification (embedding similarity against enrolled genuine voice profile). |
-| **Person 3** | **Backend Engineer** | [`backend/`](backend/) | FastAPI application, REST endpoints (`/audio/analyze`, `/speaker/enroll`, `/speaker/verify`), database schemas, and service orchestration. |
-| **Person 4** | **Risk & Cybersecurity Engineer** | [`security/`](security/) | Composite Multi-Signal Risk Engine, Contextual Banking Threat Analysis, JWT authentication, and DPDP Zero-Retention Privacy compliance. |
-| **Person 5** | **Frontend Engineer** | [`frontend/`](frontend/) | React 19 + Vite + Tailwind CSS Cyber-Defense SOC Dashboard, real-time waveform visualizers, pre-transaction alert prompts, and executive escalation HUD. |
-| **Person 6** | **Real-Time Integration & QA Engineer** | [`integration/`](integration/) | Real-Time WebSocket streaming (`/ws/live-stream`), temporal EMA risk smoothing, E2E integration test suite, and EER/ROC-AUC benchmark evaluations. |
+| Team Member | Role | Language & Tech | Primary Directory | Primary Deliverables |
+| :--- | :--- | :--- | :--- | :--- |
+| **Person 1** | **AI/ML Engineer** | 🐍 **Python** (PyTorch, AASIST) | [`ml/`](ml/) | Deepfake / synthetic speech detection, spectral features, model checkpoints. |
+| **Person 2** | **Speech & Speaker Verification** | 🐍 **Python** (Librosa, Torchaudio) | [`speech/`](speech/) | VAD audio loader, prosody analysis (pitch $F_0$, jitter, shimmer), speaker embeddings. |
+| **Person 3** | **Backend Engineer** | ☕ **Java** (Spring Boot 3, Maven) | [`backend/`](backend/) | REST controllers (`/audio/analyze`, `/speaker`, `/risk`), WebSocket streaming (`/ws/audio`), Swagger UI. |
+| **Person 4** | **Risk & Cybersecurity Engineer** | ☕ **Java** (Maven, Jackson, JUnit 5) | [`risk_engine/`](risk_engine/) | Composite Multi-Signal Risk Engine, Contextual Fraud Scoring, Anti-Replay Nonces, DPDP Zero-Retention. |
+| **Person 5** | **Frontend Engineer** | ⚛️ **TypeScript** (React + Vite) | [`frontend/`](frontend/) | SOC Cyber-Defense Dashboard, live audio waveform visualizer, threat alerts HUD. |
+| **Person 6** | **Integration & QA Engineer** | 🐍 ☕ **Python & Java** (E2E Suites) | [`integration/`](integration/) | Frozen JSON contracts (`risk_contract.*`), E2E pipeline tests, sliding window temporal smoothing. |
 
 ---
 
