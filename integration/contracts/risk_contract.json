@@ -1,0 +1,27 @@
+{
+  "risk_score": 87,
+  "risk_level": "CRITICAL",
+  "decision": "BLOCK",
+  "reasons": [
+    "High-confidence AI voice cloning detected (synthetic_prob: 0.92)",
+    "High-value financial transfer request (INR 500,000.00)",
+    "Severe social engineering urgency pressure detected",
+    "Speaker vocal profile mismatch against enrolled biometric signature"
+  ],
+  "model_version": "v1.2.0-composite-risk",
+  "timestamp": "2026-09-03T16:53:00Z",
+  "component_breakdown": {
+    "deepfake_probability": 0.92,
+    "speaker_similarity": 0.38,
+    "speaker_verification_status": "MISMATCH",
+    "contextual_risk": 0.85,
+    "behavioral_anomaly": 0.75,
+    "acoustic_anomaly": 0.81,
+    "prosodic_anomaly": 0.79
+  },
+  "security_metadata": {
+    "session_hash": "a8f9c1b3d5e72901",
+    "zero_retention_verified": true,
+    "replay_nonce_valid": true
+  }
+}

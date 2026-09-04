@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VoiceShieldRiskContract",
+  "description": "Standardized frozen risk evaluation contract between Person 4 (Risk Engine) and Person 3 (Backend Orchestration).",
+  "type": "object",
+  "required": [
+    "risk_score",
+    "risk_level",
+    "decision",
+    "reasons",
+    "model_version",
+    "timestamp"
+  ],
+  "properties": {
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Composite impersonation risk score scaled strictly from 0 to 100."
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+      "description": "Risk classification tier."
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["ALLOW", "WARN", "SECONDARY_VERIFICATION", "BLOCK"],
+      "description": "Actionable policy decision."
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Deterministic, human-readable explanations of all contributing threat factors."
+    },
+    "model_version": {
+      "type": "string",
+      "description": "Semantic version of the active risk engine ruleset."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp of evaluation."
+    },
+    "component_breakdown": {
+      "type": "object",
+      "description": "Optional granular sub-signal scores for SOC auditability.",
+      "properties": {
+        "deepfake_probability": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "speaker_similarity": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "speaker_verification_status": { "type": ["string", "null"] },
+        "contextual_risk": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "behavioral_anomaly": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "acoustic_anomaly": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+        "prosodic_anomaly": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 }
+      }
+    },
+    "security_metadata": {
+      "type": "object",
+      "description": "Privacy and audit compliance tokens.",
+      "properties": {
+        "session_hash": { "type": "string" },
+        "zero_retention_verified": { "type": "boolean" },
+        "replay_nonce_valid": { "type": "boolean" }
+      }
+    }
+  },
+  "additionalProperties": false
+}

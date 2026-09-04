@@ -50,3 +50,13 @@ speech/speaker_verification/weights/*.pt
 # Logs
 logs/
 *.log
+
+# Java & Maven Build Artifacts
+risk_engine/target/
+target/
+*.class
+*.jar
+*.war
+*.ear
+dependency-reduced-pom.xml
+.mvn/
