@@ -4,9 +4,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class VoiceShieldBackendApplication {
+public class VoiceShieldApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(VoiceShieldBackendApplication.class, args);
+        SpringApplication.run(VoiceShieldApplication.class, args);
     }
 }
