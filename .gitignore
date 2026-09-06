@@ -60,3 +60,6 @@ target/
 *.ear
 dependency-reduced-pom.xml
 .mvn/
+# VoiceShield local datasets and test recordings
+datasets/
+test_audio/
