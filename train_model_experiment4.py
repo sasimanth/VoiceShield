@@ -1,5 +1,7 @@
 import os
 import random
+import soundfile as sf
+from scipy.signal import resample_poly
 import numpy as np
 import torch
 import torch.nn as nn
@@ -179,29 +181,32 @@ class AudioDataset(Dataset):
         return len(self.files)
 
     def load_audio(self, filepath):
+        # ----------------------------------------------------
+        # Load WAV / FLAC using SoundFile
+        # This avoids the TorchCodec problem in torchaudio
+        # ----------------------------------------------------
 
-        waveform, sr = torchaudio.load(filepath)
+        audio_data, sr = sf.read(filepath, dtype="float32")
 
         # ----------------------------------------------------
         # Convert stereo -> mono
         # ----------------------------------------------------
 
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0)
+        if audio_data.ndim > 1:
+            audio_data = np.mean(audio_data, axis=1)
 
-        else:
-            waveform = waveform.squeeze(0)
-
+        waveform = torch.from_numpy(audio_data)
         # ----------------------------------------------------
         # Resample if required
         # ----------------------------------------------------
 
         if sr != self.sample_rate:
-
-            waveform = torchaudio.functional.resample(
-                waveform,
-                sr,
-                self.sample_rate
+            waveform = torch.from_numpy(
+                resample_poly(
+                    waveform.numpy(),
+                    self.sample_rate,
+                    sr
+                ).astype(np.float32)
             )
 
         waveform = waveform.float()
@@ -216,7 +221,6 @@ class AudioDataset(Dataset):
             waveform = waveform / max_value
 
         return waveform
-
     def fixed_length(self, waveform):
 
         length = waveform.shape[0]
