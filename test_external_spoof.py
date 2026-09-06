@@ -12,7 +12,7 @@ from ml.deepfake_detector.model import DeepfakeAASISTModel
 # CONFIGURATION
 # ============================================================
 
-TEST_DIR = "test_audio/real_world"
+TEST_DIR = "test_audio/external_spoof"
 CHECKPOINT = "checkpoints/experiment4_best_model.pth"
 
 SAMPLE_RATE = 16000
@@ -116,7 +116,7 @@ if not os.path.exists(TEST_DIR):
 files = sorted([
     os.path.join(TEST_DIR, f)
     for f in os.listdir(TEST_DIR)
-    if f.lower().endswith(".wav")
+    if f.lower().endswith((".wav", ".flac"))
 ])
 
 
