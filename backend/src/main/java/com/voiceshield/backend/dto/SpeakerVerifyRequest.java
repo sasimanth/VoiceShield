@@ -1,6 +1,7 @@
 package com.voiceshield.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jakarta.validation.constraints.NotBlank;
 
 public class SpeakerVerifyRequest {
@@ -9,8 +10,9 @@ public class SpeakerVerifyRequest {
     @JsonProperty("claimed_speaker_id")
     private String claimedSpeakerId;
 
-    @JsonProperty("audio_base64")
-    private String audioBase64;
+    @NotBlank(message = "Audio data is required")
+@JsonProperty("audio_base64")
+private String audioBase64;
 
     public SpeakerVerifyRequest() {}
 

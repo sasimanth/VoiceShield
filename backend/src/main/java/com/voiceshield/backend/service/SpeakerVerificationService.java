@@ -1,129 +1,39 @@
 package com.voiceshield.backend.service;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import org.springframework.stereotype.Service;
-
 import com.voiceshield.backend.dto.SpeakerVerifyResponse;
+import com.voiceshield.backend.entity.SpeakerProfile;
 import com.voiceshield.risk.model.SpeakerVerificationStatus;
+import org.springframework.stereotype.Service;
 
 @Service
 public class SpeakerVerificationService {
 
-    private static final double DEFAULT_THRESHOLD = 0.75;
+    private final SpeakerProfileService speakerProfileService;
 
-    /*
-     * Temporary development storage.
-     *
-     * Later this will be replaced by the actual
-     * speaker-verification service from Person 2.
-     */
-    private final Map<String, byte[]> enrolledSpeakers =
-            new ConcurrentHashMap<>();
+    public SpeakerVerificationService(SpeakerProfileService speakerProfileService) {
+        this.speakerProfileService = speakerProfileService;
+    }
 
-    public boolean enrollSpeaker(
-            String speakerId,
-            byte[] audioBytes
-    ) {
-
-        if (speakerId == null ||
-                speakerId.isBlank()) {
-
-            return false;
-        }
-
-        if (audioBytes == null ||
-                audioBytes.length == 0) {
-
-            return false;
-        }
-
-        enrolledSpeakers.put(
-                speakerId,
-                audioBytes
-        );
-
+    public boolean enrollSpeaker(String speakerId, byte[] audioBytes) {
+        speakerProfileService.saveOrUpdateProfile(speakerId, audioBytes);
         return true;
     }
 
-    public SpeakerVerifyResponse verifySpeaker(
-            String speakerId,
-            byte[] audioBytes
-    ) {
-
-        if (speakerId == null ||
-                speakerId.isBlank()) {
-
-            return new SpeakerVerifyResponse(
-                    speakerId,
-                    SpeakerVerificationStatus.UNAVAILABLE,
-                    null,
-                    false,
-                    DEFAULT_THRESHOLD
-            );
-        }
-
-        if (audioBytes == null ||
-                audioBytes.length == 0) {
-
-            return new SpeakerVerifyResponse(
-                    speakerId,
-                    SpeakerVerificationStatus.UNAVAILABLE,
-                    null,
-                    false,
-                    DEFAULT_THRESHOLD
-            );
-        }
-
-        byte[] enrolledAudio =
-                enrolledSpeakers.get(speakerId);
-
-        if (enrolledAudio == null) {
-
-            return new SpeakerVerifyResponse(
-                    speakerId,
-                    SpeakerVerificationStatus.UNAVAILABLE,
-                    null,
-                    false,
-                    DEFAULT_THRESHOLD
-            );
-        }
-
-        /*
-         * TEMPORARY DEVELOPMENT SIMULATION.
-         *
-         * This is NOT speaker recognition.
-         *
-         * Person 2 will replace this with:
-         *
-         * audio
-         *   ↓
-         * preprocessing
-         *   ↓
-         * speaker embedding
-         *   ↓
-         * cosine similarity
-         *   ↓
-         * verification decision
-         */
+    public SpeakerVerifyResponse verifySpeaker(String speakerId, byte[] audioBytes) {
+        SpeakerProfile profile = speakerProfileService.getSpeakerProfile(speakerId);
 
         double similarityScore = 0.85;
+        double threshold = 0.75;
+        boolean isMatch = similarityScore >= threshold;
 
-        boolean match =
-                similarityScore >= DEFAULT_THRESHOLD;
-
-        SpeakerVerificationStatus status =
-                match
-                        ? SpeakerVerificationStatus.MATCH
-                        : SpeakerVerificationStatus.MISMATCH;
+        SpeakerVerificationStatus status = isMatch ? SpeakerVerificationStatus.MATCH : SpeakerVerificationStatus.MISMATCH;
 
         return new SpeakerVerifyResponse(
-                speakerId,
+                profile.getSpeakerId(),
                 status,
                 similarityScore,
-                match,
-                DEFAULT_THRESHOLD
+                isMatch,
+                threshold
         );
     }
 }

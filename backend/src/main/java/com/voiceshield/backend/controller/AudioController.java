@@ -58,8 +58,6 @@ public class AudioController {
 
         try {
 
-            long startTime = System.currentTimeMillis();
-
             byte[] audioBytes = file.getBytes();
 
             String sessionId =
@@ -126,9 +124,6 @@ public class AudioController {
                             behavioralAnomaly,
                             new ContextMetadata()
                     );
-
-            long processingTime =
-                    System.currentTimeMillis() - startTime;
 
             return ResponseEntity.ok(
                     new AudioAnalysisResponse(
