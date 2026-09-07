@@ -42,6 +42,18 @@ public class AudioAnalysisResponse {
     @JsonProperty("raw_ml_features")
     private Map<String, Object> rawMlFeatures;
 
+    @JsonProperty("synthetic_probability")
+    private Double syntheticProbability;
+
+    @JsonProperty("similarity_score")
+    private Double similarityScore;
+
+    @JsonProperty("context_risk")
+    private String contextRisk;
+
+    @JsonProperty("recommended_action")
+    private String recommendedAction;
+
     public AudioAnalysisResponse() {}
 
     public AudioAnalysisResponse(RiskEvaluationResult evalResult, String sessionId, Map<String, Object> rawMlFeatures) {
@@ -54,9 +66,31 @@ public class AudioAnalysisResponse {
             this.timestamp = evalResult.getTimestamp();
             this.componentBreakdown = evalResult.getComponentBreakdown();
             this.securityMetadata = evalResult.getSecurityMetadata();
+
+            if (this.decision != null) {
+                this.recommendedAction = this.decision.name().toLowerCase();
+            }
+            if (this.componentBreakdown != null) {
+                Object syn = this.componentBreakdown.get("deepfake_probability");
+                if (syn instanceof Number num) {
+                    this.syntheticProbability = num.doubleValue();
+                }
+                Object sim = this.componentBreakdown.get("speaker_similarity");
+                if (sim instanceof Number num) {
+                    this.similarityScore = num.doubleValue();
+                }
+                Object ctx = this.componentBreakdown.get("contextual_risk");
+                if (ctx instanceof Number num) {
+                    this.contextRisk = num.doubleValue() >= 0.5 ? "HIGH" : "LOW";
+                }
+            }
         }
         this.sessionId = sessionId;
         this.rawMlFeatures = rawMlFeatures;
+        if (this.syntheticProbability == null && rawMlFeatures != null) {
+            Object syn = rawMlFeatures.get("deepfake_score");
+            if (syn instanceof Number num) this.syntheticProbability = num.doubleValue();
+        }
     }
 
     public String getSessionId() { return sessionId; }
@@ -88,4 +122,16 @@ public class AudioAnalysisResponse {
 
     public Map<String, Object> getRawMlFeatures() { return rawMlFeatures; }
     public void setRawMlFeatures(Map<String, Object> rawMlFeatures) { this.rawMlFeatures = rawMlFeatures; }
+
+    public Double getSyntheticProbability() { return syntheticProbability; }
+    public void setSyntheticProbability(Double syntheticProbability) { this.syntheticProbability = syntheticProbability; }
+
+    public Double getSimilarityScore() { return similarityScore; }
+    public void setSimilarityScore(Double similarityScore) { this.similarityScore = similarityScore; }
+
+    public String getContextRisk() { return contextRisk; }
+    public void setContextRisk(String contextRisk) { this.contextRisk = contextRisk; }
+
+    public String getRecommendedAction() { return recommendedAction; }
+    public void setRecommendedAction(String recommendedAction) { this.recommendedAction = recommendedAction; }
 }

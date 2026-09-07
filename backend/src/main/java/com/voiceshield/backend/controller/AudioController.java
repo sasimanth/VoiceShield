@@ -58,7 +58,12 @@ public class AudioController {
     )
     public ResponseEntity<AudioAnalysisResponse> analyzeAudio(
             @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "speaker_id", required = false) String speakerId
+            @RequestParam(value = "speaker_id", required = false) String speakerId,
+            @RequestParam(value = "claimed_speaker_id", required = false) String claimedSpeakerId,
+            @RequestParam(value = "transaction_value_inr", required = false) Double transactionValueInr,
+            @RequestParam(value = "urgent_social_engineering", required = false) Boolean urgentSocialEngineering,
+            @RequestParam(value = "unverified_beneficiary", required = false) Boolean unverifiedBeneficiary,
+            @RequestParam(value = "session_id", required = false) String clientSessionId
     ) {
 
         if (file == null || file.isEmpty()) {
@@ -69,7 +74,12 @@ public class AudioController {
 
             byte[] audioBytes = file.getBytes();
 
-            String sessionId = "sess-" + UUID.randomUUID().toString().substring(0, 8);
+            String sessionId = (clientSessionId != null && !clientSessionId.trim().isEmpty())
+                    ? clientSessionId.trim()
+                    : "sess-" + UUID.randomUUID().toString().substring(0, 8);
+
+            String effectiveSpeakerId = (claimedSpeakerId != null && !claimedSpeakerId.trim().isEmpty())
+                    ? claimedSpeakerId.trim() : speakerId;
 
             // 1. Dispatch Voice Integrity / Deepfake Analysis to Python (AASIST)
             MlInferenceResponse mlResponse = mlInferenceClient.analyzeAudio(
@@ -77,28 +87,40 @@ public class AudioController {
                     file.getOriginalFilename()
             );
 
-            // 2. Dispatch Speaker Verification if speaker_id is provided
+            // 2. Dispatch Speaker Verification if effectiveSpeakerId is provided
             SpeakerVerificationStatus spkStatus = SpeakerVerificationStatus.UNAVAILABLE;
             Double spkSimilarity = null;
 
-            if (speakerId != null && !speakerId.trim().isEmpty()) {
-                SpeakerVerifyResponse verifyRes = speakerVerificationService.verifySpeaker(speakerId.trim(), audioBytes);
+            if (effectiveSpeakerId != null && !effectiveSpeakerId.trim().isEmpty()) {
+                SpeakerVerifyResponse verifyRes = speakerVerificationService.verifySpeaker(effectiveSpeakerId.trim(), audioBytes);
                 if (verifyRes != null) {
                     spkStatus = verifyRes.getStatus();
                     spkSimilarity = verifyRes.getSimilarityScore();
                 }
             }
 
-            // 3. Evaluate Multi-Signal Composite Risk Score
+            // 3. Build Context Metadata for Person 4 Risk Engine
+            ContextMetadata context = new ContextMetadata();
+            if (transactionValueInr != null) {
+                context.setTransactionAmount(transactionValueInr);
+            }
+            if (urgentSocialEngineering != null) {
+                context.setUrgency(urgentSocialEngineering);
+            }
+            if (unverifiedBeneficiary != null) {
+                context.setNewBeneficiary(unverifiedBeneficiary);
+            }
+
+            // 4. Evaluate Multi-Signal Composite Risk Score
             RiskEvaluationResult riskResult = riskEvaluationService.evaluateFromSignals(
-                    speakerId,
+                    effectiveSpeakerId,
                     mlResponse.getDeepfakeScore(),
                     spkStatus,
                     spkSimilarity,
                     mlResponse.getAcousticAnomaly(),
                     mlResponse.getProsodicAnomaly(),
                     mlResponse.getBehavioralAnomaly(),
-                    new ContextMetadata()
+                    context
             );
 
             Map<String, Object> rawMlFeatures = new HashMap<>();
