@@ -50,7 +50,6 @@ speech/speaker_verification/weights/*.pt
 # Logs
 logs/
 *.log
-
 # Java & Maven Build Artifacts
 risk_engine/target/
 target/
@@ -60,3 +59,7 @@ target/
 *.ear
 dependency-reduced-pom.xml
 .mvn/
+
+# Local speaker verification model and test recordings
+pretrained_models/
+speech/test_audio/
