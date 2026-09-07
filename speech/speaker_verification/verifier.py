@@ -4,8 +4,9 @@ Owner: Person 2 (Speech & Speaker Verification Engineer)
 """
 
 from typing import Dict, Any
+import torch
 from speechbrain.inference.speaker import SpeakerRecognition
-
+from preprocessing.audio_loader import AudioPreprocessor
 
 class SpeakerVerificationEngine:
 
@@ -13,12 +14,27 @@ class SpeakerVerificationEngine:
         print("Loading pretrained speaker verification model...")
 
         self.verifier = SpeakerRecognition.from_hparams(
-    source="speechbrain/spkrec-ecapa-voxceleb",
-    savedir="pretrained_models/spkrec-ecapa-voxceleb",
+            source="speechbrain/spkrec-ecapa-voxceleb",
+            savedir="pretrained_models/spkrec-ecapa-voxceleb",
         )
+
         print("Speaker verification model loaded!")
 
         self.enrolled_profiles: Dict[str, str] = {}
+        self.preprocessor = AudioPreprocessor()
+        
+    def extract_embedding(self, audio_path: str):
+        """Extract an ECAPA speaker embedding from an audio file."""
+
+        audio_data, _ = self.preprocessor.load_from_bytes(
+            open(audio_path, "rb").read()
+        )
+
+        audio_tensor = torch.from_numpy(audio_data).float().unsqueeze(0)
+
+        embedding = self.verifier.encode_batch(audio_tensor)
+
+        return embedding.squeeze().detach().cpu()
 
     def enroll_speaker(self, speaker_id: str, audio_path: str) -> Dict[str, Any]:
         """Store the reference audio path for a speaker."""
@@ -49,9 +65,20 @@ class SpeakerVerificationEngine:
 
         reference_audio = self.enrolled_profiles[speaker_id]
 
-        score, prediction = self.verifier.verify_files(
-            reference_audio,
-            audio_path
+        reference_data, _ = self.preprocessor.load_from_bytes(
+            open(reference_audio, "rb").read()
+        )
+
+        current_data, _ = self.preprocessor.load_from_bytes(
+            open(audio_path, "rb").read()
+        )
+
+        reference_tensor = torch.from_numpy(reference_data).float().unsqueeze(0)
+        current_tensor = torch.from_numpy(current_data).float().unsqueeze(0)
+
+        score, prediction = self.verifier.verify_batch(
+            reference_tensor,
+            current_tensor
         )
 
         similarity = float(score)
