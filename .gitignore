@@ -50,3 +50,6 @@ speech/speaker_verification/weights/*.pt
 # Logs
 logs/
 *.log
+# Local speaker verification model and test recordings
+pretrained_models/
+speech/test_audio/
