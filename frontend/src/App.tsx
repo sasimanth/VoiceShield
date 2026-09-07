@@ -1,454 +1,1524 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState } from "react";
 import {
-  ShieldAlert,
-  ShieldCheck,
   Activity,
+  AlertTriangle,
+  AudioLines,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  FileAudio,
+  Fingerprint,
+  Gauge,
+  Headphones,
+  Lock,
+  Menu,
   Mic,
   MicOff,
-  Upload,
   Radio,
-  Lock,
-  FileAudio,
-  AlertTriangle,
-  CheckCircle2,
+  RefreshCw,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Siren,
+  Upload,
+  UserRound,
+  Waves,
+  Wifi,
   XCircle,
-  TrendingUp,
-  Server,
-  Fingerprint,
-  Waves
-} from 'lucide-react';
-import { AudioAnalysisResponse } from './types/index.ts';
+  Zap,
+} from "lucide-react";
 
-const BACKEND_URL = 'http://localhost:8000/api/v1';
+import type { AnalysisResult } from "./types/analysis";
+import { analyzeAudio } from "./services/api";
+
+const MOCK_RESULT: AnalysisResult = {
+  session_id: "VS-1042",
+  timestamp: new Date().toISOString(),
+  synthetic_probability: 0.82,
+  similarity_score: 0.31,
+  context_risk: "HIGH",
+  risk_score: 91,
+  risk_level: "CRITICAL",
+  decision: "SECONDARY_VERIFICATION",
+  reasons: [
+    "Elevated synthetic speech score detected",
+    "Speaker mismatch against enrolled biometric profile",
+    "High-value transaction combined with urgency indicators",
+  ],
+  recommended_action: "mfa_and_callback",
+};
+
+type View = "overview" | "analysis" | "live" | "alerts";
+
+type VerificationState =
+  | "NOT_REQUIRED"
+  | "PENDING"
+  | "VERIFIED"
+  | "REJECTED";
+
+function riskBadgeClass(level: string) {
+  switch (level.toUpperCase()) {
+    case "CRITICAL":
+      return "risk-critical";
+
+    case "HIGH":
+      return "risk-high";
+
+    case "MEDIUM":
+      return "risk-medium";
+
+    default:
+      return "risk-low";
+  }
+}
+
+function formatAction(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleString();
+}
+
+function scoreWidth(score: number) {
+  return Math.min(100, Math.max(0, score));
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'live' | 'enroll'>('upload');
+  const [activeView, setActiveView] = useState<View>("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [result, setResult] = useState<AudioAnalysisResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Context form inputs
-  const [claimedSpeaker, setClaimedSpeaker] = useState<string>('VIP-CEO-01');
-  const [transactionAmount, setTransactionAmount] = useState<string>('500000');
-  const [urgencyFlag, setUrgencyFlag] = useState<boolean>(true);
-  const [isNewBeneficiary, setIsNewBeneficiary] = useState<boolean>(true);
+  const [sessionId, setSessionId] = useState("VS-1042");
+  const [claimedSpeaker, setClaimedSpeaker] = useState("VIP-CEO-01");
+  const [transactionAmount, setTransactionAmount] = useState("500000");
+  const [urgencyFlag, setUrgencyFlag] = useState(true);
+  const [isNewBeneficiary, setIsNewBeneficiary] = useState(true);
 
-  // Live stream state
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [liveScore, setLiveScore] = useState<number>(12);
-  const [liveTier, setLiveTier] = useState<string>('LOW');
-  const wsRef = useRef<WebSocket | null>(null);
+  const [useMockMode, setUseMockMode] = useState(true);
 
-  const handleFileUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [liveRisk, setLiveRisk] = useState(12);
+  const [liveTier, setLiveTier] = useState("LOW");
+
+  const [verificationState, setVerificationState] =
+    useState<VerificationState>("NOT_REQUIRED");
+
+  const [alerts, setAlerts] = useState<string[]>([
+    "No unresolved security alerts",
+  ]);
+
+  const currentRisk = result?.risk_score ?? 0;
+  const currentTier = result?.risk_level ?? "LOW";
+
+  const syntheticPercent = useMemo(
+    () => Math.round((result?.synthetic_probability ?? 0) * 100),
+    [result]
+  );
+
+  const speakerPercent = useMemo(
+    () => Math.round((result?.similarity_score ?? 0) * 100),
+    [result]
+  );
+
+  const handleAnalyze = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
     if (!file) {
-      setError('Please select an audio file (WAV, MP3, FLAC) to analyze.');
+      setError("Select an audio file before starting analysis.");
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    const value = Number(transactionAmount);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    if (claimedSpeaker) formData.append('claimed_speaker_id', claimedSpeaker);
-    if (transactionAmount) formData.append('transaction_amount', transactionAmount);
-    formData.append('urgency_flag', urgencyFlag ? 'true' : 'false');
-    formData.append('is_new_beneficiary', isNewBeneficiary ? 'true' : 'false');
+    if (!Number.isFinite(value) || value < 0) {
+      setError("Enter a valid transaction amount.");
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    setVerificationState("NOT_REQUIRED");
 
     try {
-      const response = await fetch(`${BACKEND_URL}/audio/analyze`, {
-        method: 'POST',
-        body: formData,
-      });
+      if (useMockMode) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
 
-      if (!response.ok) {
-        throw new Error(`Server returned error: ${response.statusText}`);
+        const mock: AnalysisResult = {
+          ...MOCK_RESULT,
+          session_id: sessionId || "VS-1042",
+          timestamp: new Date().toISOString(),
+        };
+
+        setResult(mock);
+
+        if (
+          mock.risk_level === "HIGH" ||
+          mock.risk_level === "CRITICAL"
+        ) {
+          setVerificationState("PENDING");
+          setAlerts((current) => [
+            "High-risk voice integrity event detected",
+            ...current.filter(
+              (item) =>
+                item !== "No unresolved security alerts"
+            ),
+          ]);
+        }
+      } else {
+        const response = await analyzeAudio({
+          file,
+          sessionId,
+          claimedSpeakerId: claimedSpeaker,
+          transactionValueInr: value,
+          urgentSocialEngineering: urgencyFlag,
+          unverifiedBeneficiary: isNewBeneficiary,
+        });
+
+        setResult(response);
+
+        if (
+          response.risk_level === "HIGH" ||
+          response.risk_level === "CRITICAL"
+        ) {
+          setVerificationState("PENDING");
+        }
       }
-
-      const data: AudioAnalysisResponse = await response.json();
-      setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect to VoiceShield Backend.');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Voice analysis failed."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case 'CRITICAL':
-        return 'text-rose-500 bg-rose-950/40 border-rose-500/50';
-      case 'HIGH':
-        return 'text-amber-400 bg-amber-950/40 border-amber-500/50';
-      case 'MEDIUM':
-        return 'text-yellow-400 bg-yellow-950/40 border-yellow-500/50';
-      default:
-        return 'text-emerald-400 bg-emerald-950/40 border-emerald-500/50';
-    }
+  const handleVerification = () => {
+    setVerificationState("VERIFIED");
+  };
+
+  const handleReject = () => {
+    setVerificationState("REJECTED");
+  };
+
+  const resetAnalysis = () => {
+    setResult(null);
+    setError(null);
+    setVerificationState("NOT_REQUIRED");
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Radio className="w-5 h-5 text-white animate-pulse" />
+    <div className="app-shell">
+      {/* TOP HEADER */}
+      <header className="topbar">
+        <div className="brand-area">
+          <button
+            className="mobile-menu-button"
+            onClick={() =>
+              setMobileMenuOpen((current) => !current)
+            }
+            aria-label="Toggle navigation"
+          >
+            <Menu size={20} />
+          </button>
+
+          <div className="brand-mark">
+            <Shield size={21} />
           </div>
+
           <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-                VoiceShield
-              </h1>
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                SIH 2026
-              </span>
+            <div className="brand-title-row">
+              <h1>VoiceShield</h1>
+              <span className="brand-tag">SIH 2026</span>
             </div>
-            <p className="text-xs text-slate-400">AI Real-Time Voice Integrity & Impersonation Prevention</p>
+
+            <p>
+              AI Real-Time Voice Integrity & Impersonation Prevention
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
-            <Lock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>DPDP Zero-Retention Active</span>
+        <div className="topbar-status">
+          <div className="status-pill">
+            <span className="status-dot live" />
+            SYSTEM OPERATIONAL
           </div>
-          <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
-            <Server className="w-3.5 h-3.5 text-indigo-400" />
-            <span>FastAPI v1.0.0</span>
+
+          <div className="status-pill">
+            <Lock size={13} />
+            DPDP ZERO-RETENTION
+          </div>
+
+          <div className="user-pill">
+            <div className="user-avatar">
+              <UserRound size={15} />
+            </div>
+            <div>
+              <strong>Security Analyst</strong>
+              <span>Operations Console</span>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-        {/* Navigation Tabs */}
-        <div className="flex space-x-2 border-b border-slate-800 pb-2">
-          <button
-            onClick={() => setActiveTab('upload')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === 'upload'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <Upload className="w-4 h-4" />
-            <span>Forensic Audio Analysis</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('live')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === 'live'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <Radio className="w-4 h-4" />
-            <span>Live Call Intercept Stream</span>
-          </button>
-        </div>
+      <div className="workspace">
+        {/* SIDEBAR */}
+        <aside
+          className={`sidebar ${
+            mobileMenuOpen ? "sidebar-open" : ""
+          }`}
+        >
+          <div className="sidebar-section">
+            <span className="sidebar-label">MONITORING</span>
 
-        {/* Forensic Upload Analysis Tab */}
-        {activeTab === 'upload' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Column: Form Controls */}
-            <div className="lg:col-span-4 space-y-6">
-              <form onSubmit={handleFileUpload} className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <h2 className="text-base font-semibold text-slate-100 flex items-center space-x-2">
-                  <FileAudio className="w-4 h-4 text-indigo-400" />
-                  <span>Audio & Transaction Context</span>
-                </h2>
+            <button
+              className={`nav-item ${
+                activeView === "overview" ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveView("overview");
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Gauge size={17} />
+              <span>Security Overview</span>
+            </button>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Audio File (WAV, MP3, FLAC)</label>
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
-                    className="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-950 border border-slate-800 rounded-xl p-2"
-                  />
-                </div>
+            <button
+              className={`nav-item ${
+                activeView === "analysis" ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveView("analysis");
+                setMobileMenuOpen(false);
+              }}
+            >
+              <FileAudio size={17} />
+              <span>Audio Analysis</span>
+            </button>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Claimed Speaker ID (Enrolled VIP)</label>
-                  <input
-                    type="text"
-                    value={claimedSpeaker}
-                    onChange={(e) => setClaimedSpeaker(e.target.value)}
-                    placeholder="e.g. VIP-CEO-01"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+            <button
+              className={`nav-item ${
+                activeView === "live" ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveView("live");
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Radio size={17} />
+              <span>Live Stream</span>
+            </button>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Requested Transaction Value (INR)</label>
-                  <input
-                    type="number"
-                    value={transactionAmount}
-                    onChange={(e) => setTransactionAmount(e.target.value)}
-                    placeholder="500000"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+            <button
+              className={`nav-item ${
+                activeView === "alerts" ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveView("alerts");
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Siren size={17} />
+              <span>Security Alerts</span>
+              <span className="nav-count">
+                {alerts.filter(
+                  (alert) =>
+                    alert !==
+                    "No unresolved security alerts"
+                ).length}
+              </span>
+            </button>
+          </div>
 
-                <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                  <label className="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={urgencyFlag}
-                      onChange={(e) => setUrgencyFlag(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0"
-                    />
-                    <span>Urgent Social Engineering Indicator</span>
-                  </label>
-                  <label className="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isNewBeneficiary}
-                      onChange={(e) => setIsNewBeneficiary(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0"
-                    />
-                    <span>Unverified Beneficiary Account</span>
-                  </label>
-                </div>
+          <div className="sidebar-divider" />
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 font-semibold text-xs shadow-lg shadow-indigo-600/20 text-white transition disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {loading ? (
-                    <>
-                      <Activity className="w-4 h-4 animate-spin" />
-                      <span>Running Neural Multi-Layer Inspection...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Inspect Voice Authenticity</span>
-                    </>
-                  )}
-                </button>
-              </form>
+          <div className="sidebar-section">
+            <span className="sidebar-label">PLATFORM</span>
 
-              {error && (
-                <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-start space-x-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-                  <span>{error}</span>
-                </div>
-              )}
+            <div className="sidebar-info">
+              <div className="info-icon">
+                <ServerIcon />
+              </div>
+              <div>
+                <strong>Analysis Engine</strong>
+                <span>Connected interface</span>
+              </div>
             </div>
 
-            {/* Right Column: Assessment HUD */}
-            <div className="lg:col-span-8 space-y-6">
-              {result ? (
-                <>
-                  {/* Top Alert Banner */}
-                  <div className={`p-5 rounded-2xl border ${getTierColor(result.risk_tier)} flex items-center justify-between`}>
-                    <div className="flex items-center space-x-4">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-950/60 flex items-center justify-center border border-white/10 shrink-0">
-                        {result.risk_tier === 'CRITICAL' || result.risk_tier === 'HIGH' ? (
-                          <ShieldAlert className="w-7 h-7 text-rose-500 animate-bounce" />
-                        ) : (
-                          <ShieldCheck className="w-7 h-7 text-emerald-400" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xl font-bold tracking-tight">Risk Tier: {result.risk_tier}</span>
-                          <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-slate-950/80 border border-white/10">
-                            Score: {result.overall_risk_score}/100
-                          </span>
-                        </div>
-                        <p className="text-xs mt-1 text-slate-300 font-medium">Action: {result.action_required}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Recommendations */}
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Actionable Countermeasures</span>
-                    </h3>
-                    <ul className="space-y-2">
-                      {result.recommendations.map((rec, idx) => (
-                        <li key={idx} className="text-xs text-slate-300 flex items-start space-x-2 bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
-                          <span className="text-indigo-400 font-mono font-bold">{idx + 1}.</span>
-                          <span>{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Multi-Layer Metrics Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Neural Deepfake Layer */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-                      <h4 className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                        <span className="flex items-center space-x-1.5">
-                          <Activity className="w-3.5 h-3.5 text-indigo-400" />
-                          <span>AI Deepfake Classifier</span>
-                        </span>
-                        <span className={`font-mono text-xs font-bold ${result.classification === 'SPOOF' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {result.classification}
-                        </span>
-                      </h4>
-                      <div className="space-y-1.5 text-xs text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Synthetic Probability:</span>
-                          <span className="font-mono text-slate-200">{(result.synthetic_probability * 100).toFixed(1)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Bonafide (Human) Prob:</span>
-                          <span className="font-mono text-slate-200">{(result.bonafide_probability * 100).toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Prosodic Rhythm Layer */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-                      <h4 className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
-                        <Waves className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Prosodic & Rhythm Dynamics</span>
-                      </h4>
-                      <div className="space-y-1.5 text-xs text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Pitch F0 Mean:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.mean_pitch_f0_hz} Hz</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Jitter Perturbation:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.jitter_percent}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Shimmer Perturbation:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.shimmer_percent}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Spectral Biometrics */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-                      <h4 className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
-                        <TrendingUp className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Spectral Artifacts</span>
-                      </h4>
-                      <div className="space-y-1.5 text-xs text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Spectral Centroid:</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.spectral_centroid_hz} Hz</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Spectral Flatness:</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.spectral_flatness}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>High-Freq Ratio (&gt;4kHz):</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.high_freq_energy_ratio}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Speaker Verification */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-                      <h4 className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
-                        <Fingerprint className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Speaker Identity Verification</span>
-                      </h4>
-                      <div className="space-y-1.5 text-xs text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Enrolled Reference:</span>
-                          <span className="font-mono text-slate-200">{result.speaker_verification?.speaker_id || 'None'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Identity Match:</span>
-                          <span className="font-mono text-slate-200">
-                            {result.speaker_verification?.verified ? 'VERIFIED MATCH' : 'MISMATCH / UNENROLLED'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="h-80 rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 flex flex-col items-center justify-center text-center p-6 space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-slate-800/80 flex items-center justify-center text-slate-400">
-                    <Activity className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-slate-300">Awaiting Audio Submission</h3>
-                  <p className="text-xs text-slate-500 max-w-sm">
-                    Select an audio sample on the left panel to execute multi-layer deepfake, prosody, and contextual threat analysis.
-                  </p>
-                </div>
-              )}
+            <div className="sidebar-info">
+              <div className="info-icon green">
+                <Wifi size={15} />
+              </div>
+              <div>
+                <strong>Realtime Channel</strong>
+                <span>
+                  {liveConnected
+                    ? "Connected"
+                    : "Standby"}
+                </span>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* Live Stream Intercept Tab */}
-        {activeTab === 'live' && (
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center space-x-2">
-                  <Radio className="w-5 h-5 text-indigo-400 animate-pulse" />
-                  <span>Real-Time Telephony Call Intercept Stream</span>
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Continuous rolling-window audio inspection over WebSocket (<span className="font-mono text-indigo-300">ws://localhost:8000/api/v1/ws/live-stream</span>)
-                </p>
+          <div className="sidebar-footer">
+            <span>Problem Statement</span>
+            <strong>PSC26104</strong>
+          </div>
+        </aside>
+
+        {/* MAIN WORKSPACE */}
+        <main className="main-area">
+          <div className="page-heading">
+            <div>
+              <span className="eyebrow">
+                SECURITY OPERATIONS CENTER
+              </span>
+              <h2>
+                {activeView === "overview" &&
+                  "Voice Integrity Overview"}
+                {activeView === "analysis" &&
+                  "Forensic Audio Analysis"}
+                {activeView === "live" &&
+                  "Live Voice Integrity Monitor"}
+                {activeView === "alerts" &&
+                  "Security Alerts"}
+              </h2>
+              <p>
+                Monitor voice authenticity, impersonation
+                indicators and verification decisions.
+              </p>
+            </div>
+
+            <div className="page-actions">
+              <div className="mode-toggle">
+                <span>Prototype Mode</span>
+                <button
+                  className={`switch ${
+                    useMockMode ? "on" : ""
+                  }`}
+                  onClick={() =>
+                    setUseMockMode(
+                      (current) => !current
+                    )
+                  }
+                  aria-label="Toggle prototype mode"
+                >
+                  <span />
+                </button>
               </div>
+
               <button
-                onClick={() => setIsStreaming(!isStreaming)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition ${
-                  isStreaming
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30'
-                }`}
+                className="icon-button"
+                onClick={resetAnalysis}
+                title="Reset analysis"
               >
-                {isStreaming ? (
-                  <>
-                    <MicOff className="w-4 h-4" />
-                    <span>Stop Intercept Stream</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-4 h-4" />
-                    <span>Start Live Audio Stream</span>
-                  </>
-                )}
+                <RefreshCw size={16} />
               </button>
             </div>
-
-            {/* Live Visualizer HUD */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center text-center space-y-2">
-                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Live Smoothed Risk</span>
-                <span className="text-4xl font-bold font-mono text-emerald-400">{isStreaming ? liveScore : '--'}</span>
-                <span className="text-xs text-slate-500">Exponential Moving Average (EMA)</span>
-              </div>
-              <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center text-center space-y-2">
-                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Current Decision Tier</span>
-                <span className="text-2xl font-bold font-mono text-indigo-300">{isStreaming ? liveTier : 'IDLE'}</span>
-                <span className="text-xs text-slate-500">Auto-Escalation Enabled</span>
-              </div>
-              <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center text-center space-y-2">
-                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Stream Protocol</span>
-                <span className="text-xl font-bold font-mono text-slate-200">PCM 16kHz / 30ms</span>
-                <span className="text-xs text-emerald-400">Low Latency (&lt;120ms)</span>
-              </div>
-            </div>
           </div>
-        )}
-      </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500">
-        VoiceShield Platform • Smart India Hackathon 2026 (Problem Statement 26104) • Built for Team Collaboration
+          {/* OVERVIEW */}
+          {activeView === "overview" && (
+            <>
+              <section className="metric-grid">
+                <div className="metric-card">
+                  <div className="metric-card-top">
+                    <span>ACTIVE SESSION</span>
+                    <Activity size={17} />
+                  </div>
+                  <strong>
+                    {result?.session_id ?? "No active session"}
+                  </strong>
+                  <small>
+                    {result
+                      ? "Analysis available"
+                      : "Awaiting audio submission"}
+                  </small>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-card-top">
+                    <span>SYNTHETIC RISK</span>
+                    <Waves size={17} />
+                  </div>
+                  <strong>
+                    {result ? `${syntheticPercent}%` : "--"}
+                  </strong>
+                  <small>
+                    {result
+                      ? "Synthetic probability"
+                      : "No analysis yet"}
+                  </small>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-card-top">
+                    <span>SPEAKER MATCH</span>
+                    <Fingerprint size={17} />
+                  </div>
+                  <strong>
+                    {result ? `${speakerPercent}%` : "--"}
+                  </strong>
+                  <small>
+                    Similarity score
+                  </small>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-card-top">
+                    <span>OVERALL RISK</span>
+                    <ShieldAlert size={17} />
+                  </div>
+                  <strong>
+                    {result ? result.risk_score : "--"}
+                  </strong>
+                  <small>
+                    {result
+                      ? result.risk_level
+                      : "No active threat"}
+                  </small>
+                </div>
+              </section>
+
+              <section className="dashboard-grid">
+                <div className="panel risk-panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-kicker">
+                        CURRENT ASSESSMENT
+                      </span>
+                      <h3>Threat Assessment</h3>
+                    </div>
+
+                    {result ? (
+                      <span
+                        className={`risk-badge ${riskBadgeClass(
+                          currentTier
+                        )}`}
+                      >
+                        {currentTier}
+                      </span>
+                    ) : (
+                      <span className="neutral-badge">
+                        NO DATA
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="risk-center">
+                    <div className="risk-ring">
+                      <div className="risk-ring-inner">
+                        <span>
+                          {result ? currentRisk : "--"}
+                        </span>
+                        <small>/ 100</small>
+                      </div>
+                    </div>
+
+                    <div className="risk-description">
+                      <span className="risk-caption">
+                        OVERALL RISK SCORE
+                      </span>
+
+                      <h4>
+                        {result
+                          ? `${currentTier} RISK`
+                          : "AWAITING ANALYSIS"}
+                      </h4>
+
+                      <p>
+                        {result
+                          ? "The current assessment combines voice authenticity indicators, speaker similarity and transaction context."
+                          : "Submit an audio sample to generate a multi-layer voice integrity assessment."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="risk-breakdown">
+                    <RiskBar
+                      label="Synthetic Speech"
+                      value={syntheticPercent}
+                    />
+
+                    <RiskBar
+                      label="Speaker Similarity"
+                      value={speakerPercent}
+                      inverse
+                    />
+
+                    <RiskBar
+                      label="Transaction Context"
+                      value={
+                        result
+                          ? result.context_risk.toUpperCase() ===
+                            "CRITICAL"
+                            ? 100
+                            : result.context_risk.toUpperCase() ===
+                                "HIGH"
+                              ? 80
+                              : result.context_risk.toUpperCase() ===
+                                  "MEDIUM"
+                                ? 55
+                                : 25
+                          : 0
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="panel session-panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-kicker">
+                        ACTIVE CASE
+                      </span>
+                      <h3>Session Details</h3>
+                    </div>
+                    <Clock3 size={17} />
+                  </div>
+
+                  <div className="session-list">
+                    <DetailRow
+                      label="Session ID"
+                      value={
+                        result?.session_id ?? "VS-1042"
+                      }
+                    />
+
+                    <DetailRow
+                      label="Claimed Speaker"
+                      value={claimedSpeaker}
+                    />
+
+                    <DetailRow
+                      label="Transaction Value"
+                      value={`₹${Number(
+                        transactionAmount || 0
+                      ).toLocaleString("en-IN")}`}
+                    />
+
+                    <DetailRow
+                      label="Context Risk"
+                      value={
+                        result
+                          ? formatAction(
+                              result.context_risk
+                            )
+                          : "Not evaluated"
+                      }
+                    />
+
+                    <DetailRow
+                      label="Analysis Timestamp"
+                      value={
+                        result
+                          ? formatTime(result.timestamp)
+                          : "—"
+                      }
+                    />
+                  </div>
+
+                  <button
+                    className="primary-button full-width"
+                    onClick={() =>
+                      setActiveView("analysis")
+                    }
+                  >
+                    <AudioLines size={16} />
+                    Open Audio Analysis
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </section>
+
+              <section className="bottom-grid">
+                <div className="panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-kicker">
+                        ANALYSIS EXPLANATION
+                      </span>
+                      <h3>Why the System Raised Risk</h3>
+                    </div>
+                  </div>
+
+                  {result ? (
+                    <div className="reason-list">
+                      {result.reasons.map(
+                        (reason, index) => (
+                          <div
+                            className="reason-row"
+                            key={`${reason}-${index}`}
+                          >
+                            <div className="reason-number">
+                              {String(index + 1).padStart(
+                                2,
+                                "0"
+                              )}
+                            </div>
+
+                            <div>
+                              <strong>{reason}</strong>
+                              <span>
+                                Security indicator returned
+                                by the analysis pipeline.
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={<Activity size={18} />}
+                      title="No assessment available"
+                      text="Run an audio analysis to view the factors contributing to the risk score."
+                    />
+                  )}
+                </div>
+
+                <div className="panel action-panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="panel-kicker">
+                        RESPONSE
+                      </span>
+                      <h3>Recommended Action</h3>
+                    </div>
+                  </div>
+
+                  {result ? (
+                    <>
+                      <div className="recommended-action">
+                        <div className="action-icon">
+                          <Zap size={19} />
+                        </div>
+
+                        <div>
+                          <strong>
+                            {formatAction(
+                              result.recommended_action
+                            )}
+                          </strong>
+
+                          <span>
+                            Decision state:{" "}
+                            {formatAction(
+                              result.decision
+                            )}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        className="primary-button"
+                        onClick={() => {
+                          setActiveView("analysis");
+                          setVerificationState(
+                            "PENDING"
+                          );
+                        }}
+                      >
+                        Start Verification
+                        <ChevronRight size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <EmptyState
+                      icon={<ShieldCheck size={18} />}
+                      title="No action required yet"
+                      text="A recommended response will appear after analysis."
+                    />
+                  )}
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* AUDIO ANALYSIS */}
+          {activeView === "analysis" && (
+            <section className="analysis-layout">
+              <div className="panel upload-panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">
+                      FORENSIC INPUT
+                    </span>
+                    <h3>Audio & Transaction Context</h3>
+                  </div>
+                  <FileAudio size={18} />
+                </div>
+
+                <form
+                  className="analysis-form"
+                  onSubmit={handleAnalyze}
+                >
+                  <div className="field">
+                    <label htmlFor="audio">
+                      Audio File
+                    </label>
+
+                    <div className="upload-zone">
+                      <Upload size={20} />
+
+                      <strong>
+                        Select audio evidence
+                      </strong>
+
+                      <span>
+                        Supported: WAV, MP3, FLAC
+                      </span>
+
+                      <input
+                        id="audio"
+                        type="file"
+                        accept=".wav,.mp3,.flac,audio/wav,audio/mpeg,audio/flac"
+                        onChange={(event) =>
+                          setFile(
+                            event.target.files?.[0] ??
+                              null
+                          )
+                        }
+                      />
+
+                      {file && (
+                        <div className="selected-file">
+                          <FileAudio size={15} />
+                          <span>{file.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-two-columns">
+                    <div className="field">
+                      <label htmlFor="session">
+                        Session ID
+                      </label>
+                      <input
+                        id="session"
+                        value={sessionId}
+                        onChange={(event) =>
+                          setSessionId(
+                            event.target.value
+                          )
+                        }
+                        placeholder="VS-1042"
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label htmlFor="speaker">
+                        Claimed Speaker ID
+                      </label>
+                      <input
+                        id="speaker"
+                        value={claimedSpeaker}
+                        onChange={(event) =>
+                          setClaimedSpeaker(
+                            event.target.value
+                          )
+                        }
+                        placeholder="VIP-CEO-01"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label htmlFor="amount">
+                      Requested Transaction Value (INR)
+                    </label>
+                    <div className="currency-input">
+                      <span>₹</span>
+                      <input
+                        id="amount"
+                        type="number"
+                        min="0"
+                        value={transactionAmount}
+                        onChange={(event) =>
+                          setTransactionAmount(
+                            event.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="toggle-card">
+                    <label>
+                      <span>
+                        <strong>
+                          Urgent Social Engineering
+                        </strong>
+                        <small>
+                          Caller pressure / urgency
+                          indicator
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={urgencyFlag}
+                        onChange={(event) =>
+                          setUrgencyFlag(
+                            event.target.checked
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      <span>
+                        <strong>
+                          Unverified Beneficiary
+                        </strong>
+                        <small>
+                          New or untrusted transaction
+                          destination
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={isNewBeneficiary}
+                        onChange={(event) =>
+                          setIsNewBeneficiary(
+                            event.target.checked
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  {error && (
+                    <div className="error-banner">
+                      <AlertTriangle size={16} />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="primary-button full-width analyze-button"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw
+                          size={17}
+                          className="spin"
+                        />
+                        Analyzing Audio...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={17} />
+                        Inspect Voice Authenticity
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              <div className="analysis-results">
+                {!result ? (
+                  <div className="panel empty-analysis">
+                    <div className="empty-analysis-icon">
+                      <Headphones size={27} />
+                    </div>
+
+                    <span className="panel-kicker">
+                      ANALYSIS CONSOLE
+                    </span>
+
+                    <h3>Awaiting Audio Submission</h3>
+
+                    <p>
+                      Upload a voice sample on the left to
+                      generate the security assessment.
+                    </p>
+
+                    <div className="process-flow">
+                      <ProcessStep
+                        number="01"
+                        label="Audio"
+                      />
+                      <ProcessLine />
+                      <ProcessStep
+                        number="02"
+                        label="Detection"
+                      />
+                      <ProcessLine />
+                      <ProcessStep
+                        number="03"
+                        label="Risk"
+                      />
+                      <ProcessLine />
+                      <ProcessStep
+                        number="04"
+                        label="Response"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className={`panel result-banner ${riskBadgeClass(
+                        result.risk_level
+                      )}`}
+                    >
+                      <div className="result-banner-icon">
+                        {result.risk_level ===
+                        "CRITICAL" ||
+                        result.risk_level === "HIGH" ? (
+                          <ShieldAlert size={24} />
+                        ) : (
+                          <ShieldCheck size={24} />
+                        )}
+                      </div>
+
+                      <div className="result-banner-copy">
+                        <span>
+                          VOICE INTEGRITY ASSESSMENT
+                        </span>
+
+                        <h3>
+                          {result.risk_level} RISK
+                        </h3>
+
+                        <p>
+                          Elevated likelihood of
+                          synthetic/manipulated speech
+                          detected.
+                        </p>
+                      </div>
+
+                      <div className="result-score">
+                        <strong>
+                          {result.risk_score}
+                        </strong>
+                        <span>RISK SCORE</span>
+                      </div>
+                    </div>
+
+                    <div className="analysis-stat-grid">
+                      <AnalysisStat
+                        label="Synthetic Probability"
+                        value={`${syntheticPercent}%`}
+                        progress={syntheticPercent}
+                        icon={<Waves size={17} />}
+                      />
+
+                      <AnalysisStat
+                        label="Speaker Similarity"
+                        value={`${speakerPercent}%`}
+                        progress={speakerPercent}
+                        icon={<Fingerprint size={17} />}
+                      />
+
+                      <AnalysisStat
+                        label="Context Risk"
+                        value={result.context_risk}
+                        text
+                        icon={<AlertTriangle size={17} />}
+                      />
+                    </div>
+
+                    <div className="panel">
+                      <div className="panel-header">
+                        <div>
+                          <span className="panel-kicker">
+                            DECISION INTELLIGENCE
+                          </span>
+                          <h3>Risk Factors</h3>
+                        </div>
+                      </div>
+
+                      <div className="reason-list">
+                        {result.reasons.map(
+                          (reason, index) => (
+                            <div
+                              className="reason-row"
+                              key={`${reason}-${index}`}
+                            >
+                              <div className="reason-number">
+                                {String(index + 1).padStart(
+                                  2,
+                                  "0"
+                                )}
+                              </div>
+
+                              <div>
+                                <strong>{reason}</strong>
+                                <span>
+                                  Evidence contributing to
+                                  the current risk decision.
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="panel verification-panel">
+                      <div className="panel-header">
+                        <div>
+                          <span className="panel-kicker">
+                            SECURITY RESPONSE
+                          </span>
+                          <h3>
+                            Secondary Verification
+                          </h3>
+                        </div>
+
+                        <span
+                          className={`verification-badge ${verificationState.toLowerCase()}`}
+                        >
+                          {verificationState.replace(
+                            /_/g,
+                            " "
+                          )}
+                        </span>
+                      </div>
+
+                      <p className="verification-copy">
+                        Recommended action:{" "}
+                        <strong>
+                          {formatAction(
+                            result.recommended_action
+                          )}
+                        </strong>
+                      </p>
+
+                      <div className="verification-actions">
+                        <button
+                          className="primary-button"
+                          onClick={handleVerification}
+                        >
+                          <CheckCircle2 size={16} />
+                          Mark Verified
+                        </button>
+
+                        <button
+                          className="secondary-button danger"
+                          onClick={handleReject}
+                        >
+                          <XCircle size={16} />
+                          Reject / Escalate
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* LIVE STREAM */}
+          {activeView === "live" && (
+            <section className="live-layout">
+              <div className="panel live-header-panel">
+                <div>
+                  <span className="panel-kicker">
+                    REAL-TIME MONITOR
+                  </span>
+                  <h3>Live Voice Integrity Stream</h3>
+                  <p>
+                    Frontend monitoring interface ready for
+                    WebSocket telemetry integration.
+                  </p>
+                </div>
+
+                <div className="live-controls">
+                  <span
+                    className={`connection-status ${
+                      liveConnected ? "connected" : ""
+                    }`}
+                  >
+                    <span />
+                    {liveConnected
+                      ? "CONNECTED"
+                      : "STANDBY"}
+                  </span>
+
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      setLiveConnected(
+                        (current) => !current
+                      );
+
+                      if (!liveConnected) {
+                        setLiveRisk(28);
+                        setLiveTier("MEDIUM");
+                      } else {
+                        setLiveRisk(12);
+                        setLiveTier("LOW");
+                      }
+                    }}
+                  >
+                    {liveConnected ? (
+                      <>
+                        <MicOff size={16} />
+                        Stop Monitoring
+                      </>
+                    ) : (
+                      <>
+                        <Mic size={16} />
+                        Start Monitoring
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="metric-grid live-metrics">
+                <div className="metric-card large">
+                  <div className="metric-card-top">
+                    <span>LIVE RISK SCORE</span>
+                    <Activity size={17} />
+                  </div>
+                  <strong>{liveConnected ? liveRisk : "--"}</strong>
+                  <small>
+                    Rolling real-time assessment
+                  </small>
+                </div>
+
+                <div className="metric-card large">
+                  <div className="metric-card-top">
+                    <span>DECISION TIER</span>
+                    <ShieldAlert size={17} />
+                  </div>
+                  <strong>
+                    {liveConnected ? liveTier : "IDLE"}
+                  </strong>
+                  <small>
+                    Auto-escalation interface
+                  </small>
+                </div>
+
+                <div className="metric-card large">
+                  <div className="metric-card-top">
+                    <span>STREAM STATUS</span>
+                    <Wifi size={17} />
+                  </div>
+                  <strong>
+                    {liveConnected
+                      ? "ONLINE"
+                      : "STANDBY"}
+                  </strong>
+                  <small>
+                    WebSocket-ready frontend
+                  </small>
+                </div>
+              </div>
+
+              <div className="panel waveform-panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">
+                      TELEMETRY
+                    </span>
+                    <h3>Audio Activity Monitor</h3>
+                  </div>
+
+                  <span className="live-indicator">
+                    <span />
+                    LIVE
+                  </span>
+                </div>
+
+                <div className="waveform">
+                  {Array.from({
+                    length: 44,
+                  }).map((_, index) => {
+                    const height =
+                      liveConnected
+                        ? 15 +
+                          ((index * 17) % 58)
+                        : 10 + ((index * 7) % 20);
+
+                    return (
+                      <span
+                        key={index}
+                        style={{
+                          height: `${height}px`,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+
+                <div className="waveform-footer">
+                  <span>00:00</span>
+                  <span>
+                    Stream telemetry visualization
+                  </span>
+                  <span>LIVE</span>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ALERTS */}
+          {activeView === "alerts" && (
+            <section className="alerts-layout">
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">
+                      INCIDENT RESPONSE
+                    </span>
+                    <h3>Security Alerts</h3>
+                  </div>
+
+                  <span className="alert-count">
+                    {alerts.filter(
+                      (alert) =>
+                        alert !==
+                        "No unresolved security alerts"
+                    ).length}{" "}
+                    active
+                  </span>
+                </div>
+
+                <div className="alert-list">
+                  {alerts.map((alert, index) => (
+                    <div
+                      className="alert-row"
+                      key={`${alert}-${index}`}
+                    >
+                      <div className="alert-icon">
+                        {alert.includes("risk") ? (
+                          <ShieldAlert size={17} />
+                        ) : (
+                          <ShieldCheck size={17} />
+                        )}
+                      </div>
+
+                      <div>
+                        <strong>{alert}</strong>
+                        <span>
+                          VoiceShield security monitoring
+                          event
+                        </span>
+                      </div>
+
+                      <span className="alert-time">
+                        Just now
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel action-panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">
+                      RESPONSE PLAYBOOK
+                    </span>
+                    <h3>Risk Response</h3>
+                  </div>
+                </div>
+
+                <div className="playbook-list">
+                  <PlaybookItem
+                    level="LOW"
+                    text="Continue normal monitoring."
+                  />
+                  <PlaybookItem
+                    level="MEDIUM"
+                    text="Review the session and context."
+                  />
+                  <PlaybookItem
+                    level="HIGH"
+                    text="Initiate secondary verification."
+                  />
+                  <PlaybookItem
+                    level="CRITICAL"
+                    text="Hold high-risk transaction and escalate."
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
+
+      <footer className="global-footer">
+        <div>
+          VoiceShield Platform · Smart India Hackathon 2026
+          · PSC26104
+        </div>
+
+        <div className="footer-right">
+          <span>
+            <span className="status-dot live" />
+            Frontend Operational
+          </span>
+          <span>Security UX Prototype</span>
+        </div>
       </footer>
+    </div>
+  );
+}
+
+function ServerIcon() {
+  return (
+    <span className="server-icon">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+function RiskBar({
+  label,
+  value,
+  inverse = false,
+}: {
+  label: string;
+  value: number;
+  inverse?: boolean;
+}) {
+  return (
+    <div className="risk-bar-block">
+      <div className="risk-bar-label">
+        <span>{label}</span>
+        <strong>{value}%</strong>
+      </div>
+
+      <div className="progress-track">
+        <div
+          className={`progress-fill ${
+            inverse ? "inverse" : ""
+          }`}
+          style={{
+            width: `${scoreWidth(value)}%`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="detail-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function AnalysisStat({
+  label,
+  value,
+  progress,
+  icon,
+  text = false,
+}: {
+  label: string;
+  value: string;
+  progress?: number;
+  icon: React.ReactNode;
+  text?: boolean;
+}) {
+  return (
+    <div className="analysis-stat">
+      <div className="analysis-stat-top">
+        <span>{label}</span>
+        {icon}
+      </div>
+
+      <strong>{value}</strong>
+
+      {!text && typeof progress === "number" ? (
+        <div className="progress-track compact">
+          <div
+            className="progress-fill"
+            style={{
+              width: `${scoreWidth(progress)}%`,
+            }}
+          />
+        </div>
+      ) : (
+        <small>Context evaluation</small>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">{icon}</div>
+      <strong>{title}</strong>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function ProcessStep({
+  number,
+  label,
+}: {
+  number: string;
+  label: string;
+}) {
+  return (
+    <div className="process-step">
+      <span>{number}</span>
+      <strong>{label}</strong>
+    </div>
+  );
+}
+
+function ProcessLine() {
+  return <div className="process-line" />;
+}
+
+function PlaybookItem({
+  level,
+  text,
+}: {
+  level: string;
+  text: string;
+}) {
+  return (
+    <div className="playbook-item">
+      <span className={`risk-badge ${riskBadgeClass(level)}`}>
+        {level}
+      </span>
+
+      <span>{text}</span>
     </div>
   );
 }
