@@ -59,7 +59,8 @@ target/
 *.ear
 dependency-reduced-pom.xml
 .mvn/
-
-# Local speaker verification model and test recordings
+# Local models, datasets and test recordings
 pretrained_models/
 speech/test_audio/
+datasets/
+test_audio/
