@@ -1,0 +1,25 @@
+{
+  "status": "DATASET_NOT_AVAILABLE",
+  "evaluation_timestamp": "2026-09-06T19:42:05Z",
+  "reproducibility": {
+    "python_version": "3.13.15",
+    "pytorch_version": "2.14.0+cpu",
+    "numpy_version": "2.5.3",
+    "scipy_version": "1.18.1",
+    "checkpoint_filename": "AASIST.pth",
+    "checkpoint_sha256": "51d2d9cf0738172f61e2a384ec50a54a55363240f67c971ed55a92435bc1a1c0",
+    "device": "cpu"
+  },
+  "dataset": {
+    "data_dir": "evaluation/data",
+    "total_samples": 0,
+    "bonafide_count": 0,
+    "spoof_count": 0
+  },
+  "metrics": null,
+  "latency": null,
+  "calibration": {
+    "status": "CALIBRATION_NOT_ESTABLISHED",
+    "brier_score": null
+  }
+}

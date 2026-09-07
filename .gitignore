@@ -13,7 +13,10 @@ venv/
 ENV/
 env/
 .env
+.env.*
 !.env.example
+*.pem
+*.key
 
 # Node / Frontend
 node_modules/
@@ -44,6 +47,15 @@ Thumbs.db
 ml/checkpoints/*.pt
 ml/checkpoints/*.pth
 !ml/checkpoints/.gitkeep
+ml/deepfake_detector/checkpoints/*.pt
+ml/deepfake_detector/checkpoints/*.pth
+!ml/deepfake_detector/checkpoints/.gitkeep
+evaluation/data/*
+!evaluation/data/.gitkeep
+!evaluation/data/**/.gitkeep
+evaluation/results/*.wav
+evaluation/results/*.mp3
+evaluation/results/*.flac
 speech/speaker_verification/weights/*.pt
 !speech/speaker_verification/weights/.gitkeep
 

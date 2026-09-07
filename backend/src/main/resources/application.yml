@@ -9,9 +9,9 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
-voiceshield:
-  ml-service:
-    url: http://localhost:8001
+ml:
+  service:
+    url: ${ML_SERVICE_URL:http://localhost:8001}
     connect-timeout-ms: 3000
     read-timeout-ms: 5000
   cors:
@@ -19,6 +19,10 @@ voiceshield:
       - "http://localhost:5173"
       - "http://localhost:3000"
       - "http://127.0.0.1:5173"
+
+voiceshield:
+  speaker-verification:
+    threshold: ${VOICESHIELD_SPEAKER_THRESHOLD:0.4000}
 
 springdoc:
   api-docs:

@@ -1,0 +1,56 @@
+===============================================================================
+VOICESHIELD PROJECT EXPORT MANIFEST
+===============================================================================
+Export Date/Time : 2026-09-07 11:16:30 IST
+Project Root     : C:\Users\smans\VoiceShield
+Git Branch       : member-mansoor
+Git Commit Hash  : e867ef332eb8194be54f8fa8301cbff88b0c6a7d
+Archive Filename : VoiceShield_Complete_Project_Phase6C3.zip
+
+-------------------------------------------------------------------------------
+MAJOR COMPONENTS INCLUDED:
+-------------------------------------------------------------------------------
+- backend/              : Java Spring Boot Backend (Speaker Biometrics, Risk Client)
+- ml_service/           : Python FastAPI Service (AASIST + ECAPA /speaker/embed)
+- ml/                   : Neural Models (NAVER AASIST + SpeechBrain ECAPA-TDNN)
+- evaluation/           : Evaluation Framework (AASIST + ECAPA Evaluators)
+- docs/                 : Architecture & Phase Design Specifications
+- integration/          : Benchmark Suite & Integration Contracts
+- risk_engine/          : Multi-Signal Risk Scoring & Decision Engine
+- speech/               : Audio Prosody & Verification Modules
+- frontend/             : Web Interface Component
+
+-------------------------------------------------------------------------------
+PHASE 6C-3 REQUIRED DELIVERABLES:
+-------------------------------------------------------------------------------
+- evaluation/scripts/evaluate_ecapa.py     : ECAPA Evaluation Runner
+- evaluation/tests/test_ecapa_evaluator.py : ECAPA Evaluator Unit Tests
+- docs/PHASE_6C_3_EVALUATION_PROTOCOL.md    : Evaluation Protocol Spec
+- docs/PHASE_6C_3_EVALUATION_REPORT.md      : Evaluation Status Report
+
+-------------------------------------------------------------------------------
+ECAPA-TDNN NEURAL MODEL PROVENANCE:
+-------------------------------------------------------------------------------
+- Model Identifier : speechbrain/spkrec-ecapa-voxceleb
+- Revision Commit  : 0f99f2d0ebe89ac095bcc5903c4dd8f72b367286
+- Local Checkpoints: ml/checkpoints/spkrec-ecapa-voxceleb/
+  * embedding_model.ckpt (83,316,686 bytes)
+  * classifier.ckpt (5,534,328 bytes)
+  * label_encoder.ckpt (128,619 bytes)
+  * mean_var_norm_emb.ckpt (1,921 bytes)
+  * hyperparams.yaml (1,919 bytes)
+
+-------------------------------------------------------------------------------
+DATABASE CONFIGURATION:
+-------------------------------------------------------------------------------
+- Production DDL Auto : spring.jpa.hibernate.ddl-auto=validate (application-prod.properties)
+- Storage Semantics   : speaker_profiles.audio_data BYTEA stores 768-byte Float32 ECAPA vector
+- Credentials         : Zero hardcoded passwords; uses ${SPRING_DATASOURCE_PASSWORD}
+
+-------------------------------------------------------------------------------
+SECURITY & DECISION STATE:
+-------------------------------------------------------------------------------
+- Speaker Threshold   : UNCONFIGURED (Double threshold = null)
+- Dataset Status      : Zero unauthorized external speaker datasets downloaded/imported
+- Phase Status        : PHASE 6C-3 — EVALUATION PROTOCOL READY / EMPIRICAL CALIBRATION BLOCKED BY DATASET
+===============================================================================

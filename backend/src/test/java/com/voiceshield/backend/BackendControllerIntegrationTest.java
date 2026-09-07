@@ -2,6 +2,8 @@ package com.voiceshield.backend;
 
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,17 +21,23 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.voiceshield.backend.client.MlInferenceClient;
+import com.voiceshield.backend.dto.MlSpeakerEmbeddingResponse;
 import com.voiceshield.backend.entity.SpeakerProfile;
 import com.voiceshield.backend.repository.SpeakerProfileRepository;
 import com.voiceshield.risk.model.ContextMetadata;
 import com.voiceshield.risk.model.RiskSignalInput;
 import com.voiceshield.risk.model.SpeakerVerificationStatus;
+import org.springframework.web.client.RestClient;
+
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
+@ActiveProfiles("test")
 @AutoConfigureMockMvc
 public class BackendControllerIntegrationTest {
 
@@ -42,15 +50,34 @@ public class BackendControllerIntegrationTest {
    @MockBean
    private SpeakerProfileRepository speakerProfileRepository;
 
+   @MockBean
+   private RestClient mlRestClient;
+
    @BeforeEach
    void setUp() {
-      byte[] dummyAudio = new byte[]{82, 73, 70, 70, 0, 0, 0, 0};
-      SpeakerProfile profile = new SpeakerProfile("USER-999", dummyAudio);
+      float[] floatVec = new float[192];
+      for (int i = 0; i < 192; i++) floatVec[i] = 0.1f;
+      byte[] dummyVectorBytes = com.voiceshield.backend.util.VectorUtils.floatArrayToBytes(floatVec);
+
+      SpeakerProfile profile = new SpeakerProfile("USER-999", dummyVectorBytes);
 
       Mockito.when(speakerProfileRepository.save(any(SpeakerProfile.class))).thenReturn(profile);
-      // Ensure your mock uses String for speaker ID lookup
-when(speakerProfileRepository.findBySpeakerId(anyString()))
-    .thenReturn(Optional.of(new SpeakerProfile("USER-101", "dummy-audio".getBytes())));
+      when(speakerProfileRepository.findBySpeakerId(anyString()))
+          .thenReturn(Optional.of(profile));
+
+      List<Double> mockEmbedding = Collections.nCopies(192, 0.1);
+      MlSpeakerEmbeddingResponse mockEmbeddingResponse = new MlSpeakerEmbeddingResponse(mockEmbedding, 192, "SUCCESS");
+
+      RestClient.RequestBodyUriSpec uriSpec = Mockito.mock(RestClient.RequestBodyUriSpec.class);
+      RestClient.RequestBodySpec bodySpec = Mockito.mock(RestClient.RequestBodySpec.class);
+      RestClient.ResponseSpec responseSpec = Mockito.mock(RestClient.ResponseSpec.class);
+
+      when(mlRestClient.post()).thenReturn(uriSpec);
+      when(uriSpec.uri(anyString())).thenReturn(bodySpec);
+      when(bodySpec.contentType(any(MediaType.class))).thenReturn(bodySpec);
+      when(bodySpec.body(any(Object.class))).thenReturn(bodySpec);
+      when(bodySpec.retrieve()).thenReturn(responseSpec);
+      when(responseSpec.body(MlSpeakerEmbeddingResponse.class)).thenReturn(mockEmbeddingResponse);
    }
 
    @Test
@@ -119,14 +146,14 @@ when(speakerProfileRepository.findBySpeakerId(anyString()))
               .andExpect(MockMvcResultMatchers.jsonPath("$.success").value(true))
               .andExpect(MockMvcResultMatchers.jsonPath("$.speaker_id").value("USER-999"));
 
-      // VERIFY
+      // VERIFY (Phase 6C-4 active threshold 0.4000: matching vectors return status MATCH, similarity_score=1.0, is_match=true, threshold=0.4)
       this.mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/speaker/verify")
               .contentType(MediaType.APPLICATION_JSON)
               .content("{\"claimed_speaker_id\":\"USER-999\",\"audio_base64\":\"" + audioBase64 + "\"}"))
               .andExpect(MockMvcResultMatchers.status().isOk())
               .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("MATCH"))
-              .andExpect(MockMvcResultMatchers.jsonPath("$.is_match").value(true))
-              .andExpect(MockMvcResultMatchers.jsonPath("$.similarity_score").value(0.85))
-              .andExpect(MockMvcResultMatchers.jsonPath("$.threshold").value(0.75));
+              .andExpect(MockMvcResultMatchers.jsonPath("$.similarity_score").value(1.0))
+              .andExpect(MockMvcResultMatchers.jsonPath("$.threshold").value(0.4))
+              .andExpect(MockMvcResultMatchers.jsonPath("$.is_match").value(true));
    }
 }

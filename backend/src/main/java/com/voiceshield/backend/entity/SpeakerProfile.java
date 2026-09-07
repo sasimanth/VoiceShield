@@ -7,7 +7,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 @Entity
@@ -21,9 +20,8 @@ public class SpeakerProfile {
     @Column(name = "speaker_id", nullable = false, unique = true)
     private String speakerId;
 
-    @Lob
-    @Column(name = "audio_data")
-    private byte[] audioData;
+    @Column(name = "audio_data", columnDefinition = "BYTEA")
+private byte[] audioData;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;

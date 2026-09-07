@@ -1,5 +1,6 @@
 package com.voiceshield.backend.controller;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -7,13 +8,17 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.voiceshield.backend.client.MlInferenceClient;
 import com.voiceshield.backend.dto.AudioAnalysisResponse;
-import com.voiceshield.backend.service.MlInferenceClient;
+import com.voiceshield.backend.dto.MlInferenceResponse;
+import com.voiceshield.backend.dto.SpeakerVerifyResponse;
 import com.voiceshield.backend.service.RiskEvaluationService;
+import com.voiceshield.backend.service.SpeakerVerificationService;
 import com.voiceshield.risk.model.ContextMetadata;
 import com.voiceshield.risk.model.RiskEvaluationResult;
 import com.voiceshield.risk.model.SpeakerVerificationStatus;
@@ -31,13 +36,16 @@ public class AudioController {
 
     private final MlInferenceClient mlInferenceClient;
     private final RiskEvaluationService riskEvaluationService;
+    private final SpeakerVerificationService speakerVerificationService;
 
     public AudioController(
             MlInferenceClient mlInferenceClient,
-            RiskEvaluationService riskEvaluationService
+            RiskEvaluationService riskEvaluationService,
+            SpeakerVerificationService speakerVerificationService
     ) {
         this.mlInferenceClient = mlInferenceClient;
         this.riskEvaluationService = riskEvaluationService;
+        this.speakerVerificationService = speakerVerificationService;
     }
 
     @PostMapping(
@@ -46,10 +54,11 @@ public class AudioController {
     )
     @Operation(
             summary = "Analyze Audio",
-            description = "Analyzes an uploaded audio file for synthetic/deepfake voice risk"
+            description = "Analyzes an uploaded audio file for synthetic/deepfake voice risk and optional speaker verification"
     )
     public ResponseEntity<AudioAnalysisResponse> analyzeAudio(
-            @RequestPart("file") MultipartFile file
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "speaker_id", required = false) String speakerId
     ) {
 
         if (file == null || file.isEmpty()) {
@@ -60,76 +69,55 @@ public class AudioController {
 
             byte[] audioBytes = file.getBytes();
 
-            String sessionId =
-                    "sess-" + UUID.randomUUID()
-                            .toString()
-                            .substring(0, 8);
+            String sessionId = "sess-" + UUID.randomUUID().toString().substring(0, 8);
 
-            /*
-             * Step 1:
-             * Send audio to ML service.
-             *
-             * If the Python ML service is unavailable,
-             * MlInferenceClient currently provides fallback
-             * development features.
-             */
-            Map<String, Object> mlFeatures =
-                    mlInferenceClient.analyzeAudio(
-                            audioBytes,
-                            file.getOriginalFilename()
-                    );
+            // 1. Dispatch Voice Integrity / Deepfake Analysis to Python (AASIST)
+            MlInferenceResponse mlResponse = mlInferenceClient.analyzeAudio(
+                    audioBytes,
+                    file.getOriginalFilename()
+            );
 
-            double deepfakeProbability =
-                    getDouble(
-                            mlFeatures,
-                            "deepfake_probability",
-                            0.05
-                    );
+            // 2. Dispatch Speaker Verification if speaker_id is provided
+            SpeakerVerificationStatus spkStatus = SpeakerVerificationStatus.UNAVAILABLE;
+            Double spkSimilarity = null;
 
-            double acousticAnomaly =
-                    getDouble(
-                            mlFeatures,
-                            "acoustic_anomaly",
-                            0.10
-                    );
+            if (speakerId != null && !speakerId.trim().isEmpty()) {
+                SpeakerVerifyResponse verifyRes = speakerVerificationService.verifySpeaker(speakerId.trim(), audioBytes);
+                if (verifyRes != null) {
+                    spkStatus = verifyRes.getStatus();
+                    spkSimilarity = verifyRes.getSimilarityScore();
+                }
+            }
 
-            double prosodicAnomaly =
-                    getDouble(
-                            mlFeatures,
-                            "prosodic_anomaly",
-                            0.10
-                    );
+            // 3. Evaluate Multi-Signal Composite Risk Score
+            RiskEvaluationResult riskResult = riskEvaluationService.evaluateFromSignals(
+                    speakerId,
+                    mlResponse.getDeepfakeScore(),
+                    spkStatus,
+                    spkSimilarity,
+                    mlResponse.getAcousticAnomaly(),
+                    mlResponse.getProsodicAnomaly(),
+                    mlResponse.getBehavioralAnomaly(),
+                    new ContextMetadata()
+            );
 
-            double behavioralAnomaly =
-                    getDouble(
-                            mlFeatures,
-                            "behavioral_anomaly",
-                            0.10
-                    );
-
-            /*
-             * Speaker verification is not connected yet.
-             *
-             * Therefore we explicitly mark it UNAVAILABLE
-             * instead of pretending that verification happened.
-             */
-            RiskEvaluationResult riskResult =
-                    riskEvaluationService.evaluateFromSignals(
-                            null,
-                            deepfakeProbability,
-                            SpeakerVerificationStatus.UNAVAILABLE,
-                            null,
-                            acousticAnomaly,
-                            prosodicAnomaly,
-                            behavioralAnomaly,
-                            new ContextMetadata()
-                    );
+            Map<String, Object> rawMlFeatures = new HashMap<>();
+            rawMlFeatures.put("deepfake_score", mlResponse.getDeepfakeScore());
+            rawMlFeatures.put("acoustic_anomaly", mlResponse.getAcousticAnomaly());
+            rawMlFeatures.put("prosodic_anomaly", mlResponse.getProsodicAnomaly());
+            rawMlFeatures.put("behavioral_anomaly", mlResponse.getBehavioralAnomaly());
+            rawMlFeatures.put("analysis_status", mlResponse.getAnalysisStatus());
+            rawMlFeatures.put("ml_service_status", mlResponse.getMlServiceStatus());
+            rawMlFeatures.put("speaker_verification_status", spkStatus.name());
+            if (spkSimilarity != null) {
+                rawMlFeatures.put("speaker_similarity", spkSimilarity);
+            }
 
             return ResponseEntity.ok(
                     new AudioAnalysisResponse(
                             riskResult,
                             sessionId,
-                            mlFeatures
+                            rawMlFeatures
                     )
             );
 
@@ -139,20 +127,5 @@ public class AudioController {
                     "Audio analysis failed: " + e.getMessage()
             );
         }
-    }
-
-    private double getDouble(
-            Map<String, Object> data,
-            String key,
-            double defaultValue
-    ) {
-
-        Object value = data.get(key);
-
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-
-        return defaultValue;
     }
 }
