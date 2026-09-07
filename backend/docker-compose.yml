@@ -1,5 +1,5 @@
 services:
-  voiceshield-postgres:
+  postgres:
     image: postgres:17-alpine
     container_name: voiceshield-postgres
     environment:
@@ -8,40 +8,31 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD environment variable must be provided}
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d VoiceShield"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  voiceshield-ml:
+  backend:
     build:
       context: .
-      dockerfile: ml_service/Dockerfile
-    container_name: voiceshield-ml
-    ports:
-      - "8001:8001"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  voiceshield-backend:
-    build:
-      context: ./backend
       dockerfile: Dockerfile
+    image: voiceshield-backend:1.0.0
     container_name: voiceshield-backend
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://voiceshield-postgres:5432/VoiceShield
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/VoiceShield
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD environment variable must be provided}
-      ML_SERVICE_URL: http://voiceshield-ml:8001
-      SPRING_PROFILES_ACTIVE: prod
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8001}
     depends_on:
-      voiceshield-postgres:
+      postgres:
         condition: service_healthy
-      voiceshield-ml:
-        condition: service_started
+
+volumes:
+  postgres_data:

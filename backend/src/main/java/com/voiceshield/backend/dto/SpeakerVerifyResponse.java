@@ -18,11 +18,11 @@ public class SpeakerVerifyResponse {
     private boolean isMatch;
 
     @JsonProperty("threshold")
-    private double threshold;
+    private Double threshold;
 
     public SpeakerVerifyResponse() {}
 
-    public SpeakerVerifyResponse(String speakerId, SpeakerVerificationStatus status, Double similarityScore, boolean isMatch, double threshold) {
+    public SpeakerVerifyResponse(String speakerId, SpeakerVerificationStatus status, Double similarityScore, boolean isMatch, Double threshold) {
         this.speakerId = speakerId;
         this.status = status;
         this.similarityScore = similarityScore;
@@ -42,6 +42,6 @@ public class SpeakerVerifyResponse {
     public boolean isMatch() { return isMatch; }
     public void setMatch(boolean match) { isMatch = match; }
 
-    public double getThreshold() { return threshold; }
-    public void setThreshold(double threshold) { this.threshold = threshold; }
+    public Double getThreshold() { return threshold; }
+    public void setThreshold(Double threshold) { this.threshold = threshold; }
 }
