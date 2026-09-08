@@ -30,6 +30,7 @@ import {
 
 import type { AnalysisResult } from "./types/analysis";
 import { analyzeAudio } from "./services/api";
+import { liveStreamService, StreamTelemetry } from "./services/liveStreamService";
 
 const MOCK_RESULT: AnalysisResult = {
   session_id: "VS-1042",
@@ -48,7 +49,7 @@ const MOCK_RESULT: AnalysisResult = {
   recommended_action: "mfa_and_callback",
 };
 
-type View = "overview" | "analysis" | "live" | "alerts";
+type View = "overview" | "analysis" | "live" | "alerts" | "differentiators";
 
 type VerificationState =
   | "NOT_REQUIRED"
@@ -107,6 +108,14 @@ export default function App() {
   const [liveConnected, setLiveConnected] = useState(false);
   const [liveRisk, setLiveRisk] = useState(12);
   const [liveTier, setLiveTier] = useState("LOW");
+  const [streamMode, setStreamMode] = useState<"idle" | "mic" | "simulation">("idle");
+  const [streamLogs, setStreamLogs] = useState<StreamTelemetry[]>([]);
+  const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(32));
+  const [streamLatency, setStreamLatency] = useState<number>(78);
+  const [streamDecision, setStreamDecision] = useState<string>("ALLOW");
+  const [streamReasons, setStreamReasons] = useState<string[]>([
+    "Channel idle - awaiting stream initiation",
+  ]);
 
   const [verificationState, setVerificationState] =
     useState<VerificationState>("NOT_REQUIRED");
@@ -117,7 +126,69 @@ export default function App() {
 
   useEffect(() => {
     document.title = "VoiceShield — Real-Time AI Voice Clone Detection";
+    return () => {
+      liveStreamService.stop();
+    };
   }, []);
+
+  const loadPresetSample = async (url: string, filename: string) => {
+    try {
+      setError(null);
+      setLoading(true);
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const sampleFile = new File([blob], filename, { type: "audio/wav" });
+      setFile(sampleFile);
+    } catch (e) {
+      console.error("Failed to load sample:", e);
+      setError("Failed to load preset sample. Please try uploading manually.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartMicStream = async () => {
+    setStreamMode("mic");
+    setLiveConnected(true);
+    await liveStreamService.startMicrophone(
+      (data) => {
+        setLiveRisk(data.riskScore);
+        setLiveTier(data.riskLevel);
+        setStreamDecision(data.decision);
+        setStreamReasons(data.reasons);
+        setStreamLatency(data.latencyMs);
+        setStreamLogs((prev) => [data, ...prev.slice(0, 19)]);
+      },
+      (freqs) => {
+        setFrequencyData(new Uint8Array(freqs));
+      }
+    );
+  };
+
+  const handleStartSimulationStream = () => {
+    setStreamMode("simulation");
+    setLiveConnected(true);
+    liveStreamService.startSimulation(
+      (data) => {
+        setLiveRisk(data.riskScore);
+        setLiveTier(data.riskLevel);
+        setStreamDecision(data.decision);
+        setStreamReasons(data.reasons);
+        setStreamLatency(data.latencyMs);
+        setStreamLogs((prev) => [data, ...prev.slice(0, 19)]);
+      },
+      (freqs) => {
+        setFrequencyData(new Uint8Array(freqs));
+      }
+    );
+  };
+
+  const handleStopStream = () => {
+    liveStreamService.stop();
+    setStreamMode("idle");
+    setLiveConnected(false);
+    setFrequencyData(new Uint8Array(32));
+  };
 
   const currentRisk = result?.risk_score ?? 0;
   const currentTier = result?.risk_level ?? "LOW";
@@ -343,6 +414,20 @@ export default function App() {
                     "No unresolved security alerts"
                 ).length}
               </span>
+            </button>
+
+            <button
+              className={`nav-item ${
+                activeView === "differentiators" ? "active" : ""
+              }`}
+              onClick={() => {
+                setActiveView("differentiators");
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Zap size={17} />
+              <span>SIH Competitive Edge</span>
+              <span className="nav-badge-usp">USP</span>
             </button>
           </div>
 
@@ -769,6 +854,38 @@ export default function App() {
                   className="analysis-form"
                   onSubmit={handleAnalyze}
                 >
+                  <div className="preset-samples-wrapper">
+                    <span className="preset-title">SIH DEMO TEST PRESETS (1-CLICK LOAD):</span>
+                    <div className="preset-buttons-row">
+                      <button
+                        type="button"
+                        className="preset-btn preset-btn-human"
+                        onClick={() =>
+                          loadPresetSample(
+                            "/samples/human_voice_sample.wav",
+                            "genuine_human_voice.wav"
+                          )
+                        }
+                      >
+                        <CheckCircle2 size={15} />
+                        <span>🟢 Genuine Human Voice</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="preset-btn preset-btn-deepfake"
+                        onClick={() =>
+                          loadPresetSample(
+                            "/samples/deepfake_clone_sample.wav",
+                            "ai_voice_clone_scam.wav"
+                          )
+                        }
+                      >
+                        <AlertTriangle size={15} />
+                        <span>🔴 AI Voice Clone Scam</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="field">
                     <label htmlFor="audio">
                       Audio File
@@ -1135,16 +1252,15 @@ export default function App() {
               <div className="panel live-header-panel">
                 <div>
                   <span className="panel-kicker">
-                    REAL-TIME MONITOR
+                    SUB-150MS TELEPHONY DEFENSE
                   </span>
-                  <h3>Live Voice Integrity Stream</h3>
+                  <h3>Real-Time Live Call Stream & Oscilloscope</h3>
                   <p>
-                    Frontend monitoring interface ready for
-                    WebSocket telemetry integration.
+                    Inspect in-call voice biometrics in real-time over Spring Boot WebSocket (`ws://localhost:8080/ws/audio`).
                   </p>
                 </div>
 
-                <div className="live-controls">
+                <div className="live-controls-group">
                   <span
                     className={`connection-status ${
                       liveConnected ? "connected" : ""
@@ -1152,124 +1268,325 @@ export default function App() {
                   >
                     <span />
                     {liveConnected
-                      ? "CONNECTED"
+                      ? streamMode === "mic"
+                        ? "LIVE MIC ACTIVE"
+                        : "TELEPHONY SIMULATOR ACTIVE"
                       : "STANDBY"}
                   </span>
 
-                  <button
-                    className="primary-button"
-                    onClick={() => {
-                      setLiveConnected(
-                        (current) => !current
-                      );
-
-                      if (!liveConnected) {
-                        setLiveRisk(28);
-                        setLiveTier("MEDIUM");
-                      } else {
-                        setLiveRisk(12);
-                        setLiveTier("LOW");
-                      }
-                    }}
-                  >
-                    {liveConnected ? (
-                      <>
-                        <MicOff size={16} />
-                        Stop Monitoring
-                      </>
-                    ) : (
-                      <>
+                  {!liveConnected ? (
+                    <div className="stream-action-buttons">
+                      <button
+                        type="button"
+                        className="primary-button stream-btn"
+                        onClick={handleStartMicStream}
+                      >
                         <Mic size={16} />
-                        Start Monitoring
-                      </>
-                    )}
-                  </button>
+                        Stream Live Mic
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button stream-btn"
+                        onClick={handleStartSimulationStream}
+                      >
+                        <Radio size={16} />
+                        Simulate Telephony Call
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="secondary-button danger stream-btn"
+                      onClick={handleStopStream}
+                    >
+                      <MicOff size={16} />
+                      Stop Stream
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="metric-grid live-metrics">
                 <div className="metric-card large">
                   <div className="metric-card-top">
-                    <span>LIVE RISK SCORE</span>
+                    <span>ROLLING RISK SCORE</span>
                     <Activity size={17} />
                   </div>
-                  <strong>{liveConnected ? liveRisk : "--"}</strong>
-                  <small>
-                    Rolling real-time assessment
-                  </small>
+                  <strong className={liveRisk > 70 ? "text-danger" : liveRisk > 35 ? "text-warning" : "text-success"}>
+                    {liveConnected ? `${liveRisk}/100` : "--"}
+                  </strong>
+                  <small>Sliding window composite score</small>
                 </div>
 
                 <div className="metric-card large">
                   <div className="metric-card-top">
-                    <span>DECISION TIER</span>
+                    <span>LIVE DECISION TIER</span>
                     <ShieldAlert size={17} />
                   </div>
-                  <strong>
-                    {liveConnected ? liveTier : "IDLE"}
+                  <strong className={streamDecision === "BLOCK" ? "text-danger" : streamDecision === "SECONDARY_VERIFICATION" ? "text-warning" : "text-success"}>
+                    {liveConnected ? `${streamDecision} • ${liveTier}` : "STANDBY"}
                   </strong>
-                  <small>
-                    Auto-escalation interface
-                  </small>
+                  <small>{liveConnected && streamReasons[0] ? streamReasons[0].slice(0, 45) + "..." : "Automated fraud policy tier"}</small>
                 </div>
 
                 <div className="metric-card large">
                   <div className="metric-card-top">
-                    <span>STREAM STATUS</span>
-                    <Wifi size={17} />
+                    <span>STREAM LATENCY</span>
+                    <Zap size={17} />
                   </div>
-                  <strong>
-                    {liveConnected
-                      ? "ONLINE"
-                      : "STANDBY"}
+                  <strong className="text-cyan">
+                    {liveConnected ? `${streamLatency} ms` : "--"}
                   </strong>
-                  <small>
-                    WebSocket-ready frontend
-                  </small>
+                  <small>Sub-150ms in-call guarantee</small>
+                </div>
+
+                <div className="metric-card large">
+                  <div className="metric-card-top">
+                    <span>PRIVACY GUARANTEE</span>
+                    <Lock size={17} />
+                  </div>
+                  <strong className="text-emerald">
+                    {liveConnected ? "DPDP COMPLIANT" : "ZERO-RETENTION"}
+                  </strong>
+                  <small>Stateless RAM inference</small>
                 </div>
               </div>
 
+              {/* Dynamic Oscilloscope & Frequency Spectrum Visualizer */}
               <div className="panel waveform-panel">
                 <div className="panel-header">
                   <div>
-                    <span className="panel-kicker">
-                      TELEMETRY
-                    </span>
-                    <h3>Audio Activity Monitor</h3>
+                    <span className="panel-kicker">LIVE OSCILLOSCOPE</span>
+                    <h3>Acoustic Harmonic Frequency Spectrum (16 kHz)</h3>
                   </div>
 
-                  <span className="live-indicator">
+                  <span className={`live-indicator ${liveConnected ? "pulsing" : ""}`}>
                     <span />
-                    LIVE
+                    {liveConnected ? "STREAMING" : "IDLE"}
                   </span>
                 </div>
 
-                <div className="waveform">
-                  {Array.from({
-                    length: 44,
-                  }).map((_, index) => {
-                    const height =
-                      liveConnected
-                        ? 15 +
-                          ((index * 17) % 58)
-                        : 10 + ((index * 7) % 20);
+                <div className="waveform live-frequency-bars">
+                  {Array.from({ length: 32 }).map((_, index) => {
+                    const rawVal = frequencyData[index] || 0;
+                    const barHeight = liveConnected
+                      ? Math.max(12, Math.min(85, Math.floor((rawVal / 255) * 80) + 12))
+                      : 8;
+                    const isHighRiskFreq = index > 20 && liveRisk > 50;
 
                     return (
-                      <span
-                        key={index}
-                        style={{
-                          height: `${height}px`,
-                        }}
-                      />
+                      <div key={index} className="freq-bar-wrapper">
+                        <span
+                          className={`freq-bar ${isHighRiskFreq ? "freq-bar-alert" : ""}`}
+                          style={{ height: `${barHeight}px` }}
+                        />
+                      </div>
                     );
                   })}
                 </div>
 
                 <div className="waveform-footer">
-                  <span>00:00</span>
-                  <span>
-                    Stream telemetry visualization
-                  </span>
-                  <span>LIVE</span>
+                  <span>80 Hz (Pitch F0)</span>
+                  <span>1.2 kHz (Formants F1/F2)</span>
+                  <span>4.0 kHz (Vocoder Cutoff)</span>
+                  <span>8.0 kHz (Nyquist HF)</span>
+                </div>
+              </div>
+
+              {/* Live Streaming Log Table */}
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">IN-CALL TELEMETRY LOG</span>
+                    <h3>Streaming Chunks & Fraud Interception Audit</h3>
+                  </div>
+                  <span className="log-badge">{streamLogs.length} Packets Evaluated</span>
+                </div>
+
+                {streamLogs.length === 0 ? (
+                  <div className="empty-stream-box">
+                    <Radio size={24} />
+                    <p>Click "Stream Live Mic" or "Simulate Telephony Call" to view real-time WebSocket packet evaluation.</p>
+                  </div>
+                ) : (
+                  <div className="stream-table-wrapper">
+                    <table className="stream-table">
+                      <thead>
+                        <tr>
+                          <th>CHUNK #</th>
+                          <th>TIMESTAMP</th>
+                          <th>PAYLOAD</th>
+                          <th>LATENCY</th>
+                          <th>RISK SCORE</th>
+                          <th>DECISION</th>
+                          <th>REAL-TIME REASON CODES</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {streamLogs.map((log) => (
+                          <tr key={log.chunkIndex} className={log.decision === "BLOCK" ? "row-blocked" : ""}>
+                            <td>#{log.chunkIndex}</td>
+                            <td>{log.timestamp}</td>
+                            <td>{log.chunkBytes} bytes</td>
+                            <td>{log.latencyMs} ms</td>
+                            <td>
+                              <span className={`score-badge ${log.riskScore > 60 ? "badge-danger" : "badge-safe"}`}>
+                                {log.riskScore}/100
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`decision-badge ${log.decision === "BLOCK" ? "badge-danger" : "badge-safe"}`}>
+                                {log.decision}
+                              </span>
+                            </td>
+                            <td className="reasons-cell">
+                              {log.reasons.join(" • ")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* SIH COMPETITIVE EDGE / DIFFERENTIATORS */}
+          {activeView === "differentiators" && (
+            <section className="differentiators-layout">
+              {/* Pitch Hero */}
+              <div className="panel pitch-hero-panel">
+                <div className="pitch-hero-badge">
+                  <Zap size={15} />
+                  <span>SMART INDIA HACKATHON 2026 — PROBLEM STATEMENT 26104</span>
+                </div>
+                <h2>Why VoiceShield Beats Existing Fraud & Deepfake Platforms</h2>
+                <p>
+                  Traditional deepfake tools and legacy biometrics only analyze audio in isolation. VoiceShield delivers an end-to-end cyber-defense platform purpose-built for India's banking and telecom infrastructure.
+                </p>
+              </div>
+
+              {/* 5 Architectural Pillars */}
+              <div className="pillar-grid">
+                <div className="pillar-card">
+                  <div className="pillar-icon cyan">
+                    <Fingerprint size={22} />
+                  </div>
+                  <h4>1. Multi-Modal Contextual Risk Fusion</h4>
+                  <p>
+                    Generic detectors (e.g. ElevenLabs) only ask: <em>"Is this deepfaked?"</em> VoiceShield fuses <strong>AASIST Spectral Anomaly</strong> + <strong>ECAPA-TDNN 192-D Biometrics</strong> + <strong>Banking Context</strong> (transaction ₹ value, urgency pressure flags, and unverified beneficiaries) into a single deterministic score.
+                  </p>
+                  <span className="pillar-tag">4-Tier Risk Engine</span>
+                </div>
+
+                <div className="pillar-card">
+                  <div className="pillar-icon emerald">
+                    <Clock3 size={22} />
+                  </div>
+                  <h4>2. Sub-150ms In-Call WebSocket Defense</h4>
+                  <p>
+                    Existing platforms require <strong>3 to 10 seconds of recorded batch audio</strong> after the call is over. VoiceShield processes streaming 500ms sliding windows via low-latency WebSockets, intercepting voice scams <strong>before the OTP or money is transferred</strong>.
+                  </p>
+                  <span className="pillar-tag">Active Call Interception</span>
+                </div>
+
+                <div className="pillar-card">
+                  <div className="pillar-icon purple">
+                    <Lock size={22} />
+                  </div>
+                  <h4>3. India DPDP Act 2023 "Zero-Retention"</h4>
+                  <p>
+                    Foreign deepfake services upload raw audio to overseas cloud servers, violating Indian data sovereignty and RBI guidelines. VoiceShield processes audio in <strong>ephemeral volatile RAM with immediate cryptographic zeroing</strong>, generating SHA-256 session audit certificates.
+                  </p>
+                  <span className="pillar-tag">Zero Disk Persistence</span>
+                </div>
+
+                <div className="pillar-card">
+                  <div className="pillar-icon amber">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <h4>4. Cryptographic Anti-Replay Engine</h4>
+                  <p>
+                    When attackers steal a real voice recording of a victim and replay it over the phone, standard biometrics are tricked. VoiceShield implements <strong>temporal session nonces and spectral phase drift detection</strong> to detect replayed bonafide audio.
+                  </p>
+                  <span className="pillar-tag">Anti-Replay Nonce</span>
+                </div>
+              </div>
+
+              {/* Competitive Benchmark Matrix Table */}
+              <div className="panel matrix-panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="panel-kicker">FEATURE-BY-FEATURE BENCHMARK</span>
+                    <h3>VoiceShield vs. Existing Global Platforms</h3>
+                  </div>
+                  <span className="matrix-badge">SIH 2026 Evaluation Matrix</span>
+                </div>
+
+                <div className="matrix-table-wrapper">
+                  <table className="matrix-table">
+                    <thead>
+                      <tr>
+                        <th>CORE CAPABILITY</th>
+                        <th>ELEVENLABS / SOTA CLOUD</th>
+                        <th>MCAFEE SCAM DETECTOR</th>
+                        <th>PINDROP / NUANCE BIOMETRICS</th>
+                        <th className="highlight-col">VOICESHIELD (SIH 2026)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><strong>AI Deepfake Voice Detection</strong></td>
+                        <td><span className="check-yes">✅ Yes (Acoustic only)</span></td>
+                        <td><span className="check-yes">✅ Yes (Limited)</span></td>
+                        <td><span className="check-partial">⚠️ Weak (No neural TTS focus)</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ Dual AASIST + Spectral Harmonics</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>Speaker Identity Matching</strong></td>
+                        <td><span className="check-no">❌ No</span></td>
+                        <td><span className="check-no">❌ No</span></td>
+                        <td><span className="check-yes">✅ Yes</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ 192-D ECAPA-TDNN Cosine Match</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>Transaction & Urgency Context Fusion</strong></td>
+                        <td><span className="check-no">❌ None (Audio-blind)</span></td>
+                        <td><span className="check-no">❌ None</span></td>
+                        <td><span className="check-no">❌ None</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ Full UPI / CBS Banking Integration</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>In-Call Telephony Latency</strong></td>
+                        <td><span className="check-no">❌ 3–8s Batch Delay</span></td>
+                        <td><span className="check-no">❌ Post-Call Analysis</span></td>
+                        <td><span className="check-partial">⚠️ 5–15s Passive Enrollment</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ &lt;150ms Sliding Window Streaming</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>Anti-Replay Attack Protection</strong></td>
+                        <td><span className="check-no">❌ Vulnerable to Replay</span></td>
+                        <td><span className="check-no">❌ Vulnerable to Replay</span></td>
+                        <td><span className="check-no">❌ Vulnerable to Replay</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ Cryptographic Temporal Nonces</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>India DPDP Act 2023 Compliance</strong></td>
+                        <td><span className="check-no">❌ US Cloud Storage</span></td>
+                        <td><span className="check-no">❌ Persistent Cloud Logs</span></td>
+                        <td><span className="check-partial">⚠️ Stores Permanent Biometrics</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ 100% Stateless RAM Zero-Retention</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>Deterministic Decision Policies</strong></td>
+                        <td><span className="check-no">❌ Just a % number</span></td>
+                        <td><span className="check-no">❌ Informational alert</span></td>
+                        <td><span className="check-partial">⚠️ Flag for agent review</span></td>
+                        <td className="highlight-col"><span className="check-super">✅ Automated Action (BLOCK / STEP_UP / PASS)</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </section>
