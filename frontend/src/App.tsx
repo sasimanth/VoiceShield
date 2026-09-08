@@ -97,10 +97,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [sessionId, setSessionId] = useState("VS-1042");
-  const [claimedSpeaker, setClaimedSpeaker] = useState("VIP-CEO-01");
-  const [transactionAmount, setTransactionAmount] = useState("500000");
-  const [urgencyFlag, setUrgencyFlag] = useState(true);
-  const [isNewBeneficiary, setIsNewBeneficiary] = useState(true);
+  const [claimedSpeaker, setClaimedSpeaker] = useState("");
+  const [transactionAmount, setTransactionAmount] = useState("50000");
+  const [urgencyFlag, setUrgencyFlag] = useState(false);
+  const [isNewBeneficiary, setIsNewBeneficiary] = useState(false);
 
   const [useMockMode, setUseMockMode] = useState(false);
 
