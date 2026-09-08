@@ -1841,3 +1841,437 @@ button:disabled {
     gap: 5px;
   }
 }
+
+/* -------------------------------------------------------
+   SIH 2026 CYBER-DEFENSE UPGRADE STYLES
+------------------------------------------------------- */
+
+.nav-badge-usp {
+  margin-left: auto;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  border-radius: 6px;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.preset-samples-wrapper {
+  margin-bottom: 18px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.preset-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.preset-buttons-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+.preset-btn:hover {
+  transform: translateY(-1px);
+}
+
+.preset-btn-human {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.preset-btn-human:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10b981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+}
+
+.preset-btn-deepfake {
+  border-color: rgba(244, 63, 94, 0.35);
+  background: rgba(244, 63, 94, 0.08);
+}
+
+.preset-btn-deepfake:hover {
+  background: rgba(244, 63, 94, 0.18);
+  border-color: #f43f5e;
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.25);
+}
+
+/* LIVE STREAM ENHANCEMENTS */
+.live-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.stream-action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.stream-btn {
+  padding: 9px 15px;
+  font-size: 13px;
+  gap: 7px;
+}
+
+.text-danger { color: #f43f5e !important; }
+.text-warning { color: #fbbf24 !important; }
+.text-success { color: #10b981 !important; }
+.text-cyan { color: #38bdf8 !important; }
+.text-emerald { color: #34d399 !important; }
+
+.live-indicator.pulsing span {
+  animation: pulse-ring 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+  100% { transform: scale(0.9); opacity: 0.9; }
+}
+
+.live-frequency-bars {
+  height: 96px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 14px 20px;
+  background: rgba(3, 7, 18, 0.7);
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+}
+
+.freq-bar-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+}
+
+.freq-bar {
+  width: 100%;
+  max-width: 12px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #38bdf8 0%, #6366f1 100%);
+  transition: height 0.08s ease;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+}
+
+.freq-bar-alert {
+  background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%) !important;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.5) !important;
+}
+
+.empty-stream-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: #64748b;
+  text-align: center;
+}
+
+.stream-table-wrapper {
+  overflow-x: auto;
+}
+
+.stream-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.stream-table th {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.stream-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+  color: #cbd5e1;
+}
+
+.stream-table tr.row-blocked {
+  background: rgba(244, 63, 94, 0.08);
+}
+
+.score-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.score-badge.badge-danger {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.score-badge.badge-safe {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.decision-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.decision-badge.badge-danger {
+  background: #e11d48;
+  color: #fff;
+}
+
+.decision-badge.badge-safe {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+
+.reasons-cell {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* SIH DIFFERENTIATORS / COMPETITIVE MATRIX */
+.differentiators-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.pitch-hero-panel {
+  padding: 28px;
+  background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.18), transparent 45%),
+              linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(6, 13, 24, 0.95));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 14px;
+}
+
+.pitch-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  margin-bottom: 12px;
+}
+
+.pitch-hero-panel h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.02em;
+}
+
+.pitch-hero-panel p {
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 840px;
+  margin: 0;
+}
+
+.pillar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.pillar-card {
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+}
+
+.pillar-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.35);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.5);
+}
+
+.pillar-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+}
+
+.pillar-icon.cyan {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.pillar-icon.emerald {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.pillar-icon.purple {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.3);
+}
+
+.pillar-icon.amber {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.pillar-card h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 8px 0;
+}
+
+.pillar-card p {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.55;
+  margin: 0 0 14px 0;
+  flex: 1;
+}
+
+.pillar-tag {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #cbd5e1;
+  background: rgba(51, 65, 85, 0.6);
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+/* BENCHMARK MATRIX TABLE */
+.matrix-panel {
+  padding: 22px;
+}
+
+.matrix-badge {
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.matrix-table-wrapper {
+  overflow-x: auto;
+  margin-top: 14px;
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.matrix-table th {
+  padding: 12px 14px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.16);
+  text-align: left;
+}
+
+.matrix-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
+}
+
+.matrix-table th.highlight-col,
+.matrix-table td.highlight-col {
+  background: rgba(14, 165, 233, 0.06);
+  border-left: 1px solid rgba(56, 189, 248, 0.25);
+  border-right: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.matrix-table th.highlight-col {
+  color: #38bdf8;
+  font-size: 12px;
+}
+
+.check-yes {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.check-no {
+  color: #f87171;
+  font-weight: 500;
+}
+
+.check-partial {
+  color: #fbbf24;
+  font-weight: 500;
+}
+
+.check-super {
+  color: #38bdf8;
+  font-weight: 800;
+}
