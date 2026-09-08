@@ -87,11 +87,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGlobalException(
             Exception ex, HttpServletRequest request) {
+        ex.printStackTrace();
 
         ErrorResponse response = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "Internal Server Error",
-                "An unexpected error occurred. Please try again later.",
+                "An unexpected error occurred: " + ex.getMessage(),
                 request.getRequestURI()
         );
 

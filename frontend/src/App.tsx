@@ -102,7 +102,7 @@ export default function App() {
   const [urgencyFlag, setUrgencyFlag] = useState(true);
   const [isNewBeneficiary, setIsNewBeneficiary] = useState(true);
 
-  const [useMockMode, setUseMockMode] = useState(true);
+  const [useMockMode, setUseMockMode] = useState(false);
 
   const [liveConnected, setLiveConnected] = useState(false);
   const [liveRisk, setLiveRisk] = useState(12);

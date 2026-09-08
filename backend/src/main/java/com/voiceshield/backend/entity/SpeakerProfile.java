@@ -20,8 +20,8 @@ public class SpeakerProfile {
     @Column(name = "speaker_id", nullable = false, unique = true)
     private String speakerId;
 
-    @Column(name = "audio_data", columnDefinition = "BYTEA")
-private byte[] audioData;
+    @Column(name = "audio_data")
+    private byte[] audioData;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
