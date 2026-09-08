@@ -154,6 +154,7 @@ class SpeakerVerificationEngine:
                 "similarity_threshold": threshold,
                 "verified": False,
                 "identity_anomaly_score": None,
+                "risk_level": "UNKNOWN",
                 "status": "INSUFFICIENT_AUDIO",
                 "message": (
                     "Not enough usable speech for reliable "
@@ -183,7 +184,12 @@ class SpeakerVerificationEngine:
         ).item()
 
         is_match = similarity >= threshold
-
+        if similarity >= 0.60:
+            risk_level = "LOW"
+        elif similarity >= 0.30:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "HIGH"
         identity_anomaly_score = max(
             0.0,
             1.0 - similarity
@@ -199,6 +205,9 @@ class SpeakerVerificationEngine:
                 identity_anomaly_score,
                 4
             ),
+            "duration_seconds": duration,
+            "speech_activity_ratio": speech_ratio,
+            "risk_level": risk_level,
             "status": (
                 "MATCH"
                 if is_match

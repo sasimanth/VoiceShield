@@ -46,9 +46,10 @@ for i in range(1, 8):
     )
 
     print(
-        f"Chunk {i}: "
-        f"Score = {result['similarity_score']} | "
-        f"Status = {result['status']}"
+    f"Chunk {i}: "
+    f"Score = {result['similarity_score']} | "
+    f"Risk = {result['risk_level']} | "
+    f"Status = {result['status']}"
     )
 
 
@@ -74,9 +75,10 @@ for audio_path in speaker_b_recordings:
     )
 
     print(
-        f"{audio_path.split('/')[-1]}: "
-        f"Score = {result['similarity_score']} | "
-        f"Status = {result['status']}"
+    f"{audio_path.split('/')[-1]}: "
+    f"Score = {result['similarity_score']} | "
+    f"Risk = {result['risk_level']} | "
+    f"Status = {result['status']}"
     )
 
 
