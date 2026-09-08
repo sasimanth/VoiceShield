@@ -115,6 +115,10 @@ export default function App() {
     "No unresolved security alerts",
   ]);
 
+  useEffect(() => {
+    document.title = "VoiceShield — Real-Time AI Voice Clone Detection";
+  }, []);
+
   const currentRisk = result?.risk_score ?? 0;
   const currentTier = result?.risk_level ?? "LOW";
 
