@@ -90,14 +90,25 @@ public class MlInferenceClient {
                     }
             );
 
-            Map<String, Object> response = restClient.post()
-                    .uri("/ml/predict")
-                    .contentType(
-                            MediaType.MULTIPART_FORM_DATA
-                    )
-                    .body(body)
-                    .retrieve()
-                    .body(Map.class);
+            byte[] responseBytes = restClient.post()
+        .uri("/ml/predict")
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .accept(MediaType.APPLICATION_JSON)
+        .body(body)
+        .retrieve()
+        .body(byte[].class);
+
+if (responseBytes == null || responseBytes.length == 0) {
+    throw new IllegalStateException(
+            "ML service returned an empty response."
+    );
+}
+
+Map<String, Object> response =
+        new ObjectMapper().readValue(
+                responseBytes,
+                Map.class
+        );
 
             if (response == null) {
                 throw new IllegalStateException(
@@ -158,16 +169,15 @@ public class MlInferenceClient {
                         }
                     }
             );
-
-            String responseBody = restClient.post()
+byte[] responseBytes = restClient.post()
         .uri("/speaker/embed")
         .contentType(MediaType.MULTIPART_FORM_DATA)
         .accept(MediaType.APPLICATION_JSON)
         .body(body)
         .retrieve()
-        .body(String.class);
+        .body(byte[].class);
 
-if (responseBody == null || responseBody.isBlank()) {
+if (responseBytes == null || responseBytes.length == 0) {
     throw new IllegalStateException(
             "ECAPA service returned an empty response."
     );
@@ -175,7 +185,7 @@ if (responseBody == null || responseBody.isBlank()) {
 
 Map<String, Object> response =
         new ObjectMapper().readValue(
-                responseBody,
+                responseBytes,
                 Map.class
         );
 
