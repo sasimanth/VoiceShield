@@ -1,24 +1,55 @@
 version: '3.8'
 
 services:
+
+  postgres:
+    image: postgres:16
+    container_name: voiceshield-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voiceshield_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment}
+    ports:
+      - "5432:5432"
+    volumes:
+      - voiceshield_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-voiceshield_db}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "8000:8000"
+      - "8000:8080"
     environment:
-      - ENVIRONMENT=development
+      ENVIRONMENT: development
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-voiceshield_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - .:/app
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
     ports:
       - "5173:5173"
     environment:
-      - VITE_BACKEND_URL=http://localhost:8000/api/v1
+      VITE_BACKEND_URL: http://localhost:8000/api/v1
     depends_on:
       - backend
+
+volumes:
+  voiceshield_postgres_data:

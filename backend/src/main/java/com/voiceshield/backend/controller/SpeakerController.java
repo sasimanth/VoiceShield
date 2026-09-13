@@ -26,57 +26,243 @@ public class SpeakerController {
         this.speakerService = speakerService;
     }
 
-    @PostMapping(value = "/enroll", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
-    @Operation(summary = "Enroll Speaker", description = "Enrolls reference vocal profile for claimed identity")
-    public ResponseEntity<Map<String, Object>> enrollSpeaker(
-            @RequestParam(value = "speaker_id", required = false) String speakerIdParam,
-            @RequestPart(value = "file", required = false) MultipartFile file,
-            @RequestBody(required = false) @Valid SpeakerEnrollRequest jsonRequest
+    // ------------------------------------------------------------
+    // MULTIPART ENROLLMENT
+    // ------------------------------------------------------------
+
+    @PostMapping(
+            value = "/enroll",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @Operation(
+            summary = "Enroll Speaker",
+            description = "Enrolls a speaker using an uploaded audio file"
+    )
+    public ResponseEntity<Map<String, Object>> enrollSpeakerMultipart(
+            @RequestParam("speaker_id") String speakerId,
+            @RequestPart("file") MultipartFile file
     ) {
-        String speakerId = jsonRequest != null ? jsonRequest.getSpeakerId() : speakerIdParam;
-        byte[] audioBytes = null;
-
         try {
-            if (file != null && !file.isEmpty()) {
-                audioBytes = file.getBytes();
-            } else if (jsonRequest != null && jsonRequest.getAudioBase64() != null) {
-                audioBytes = Base64.getDecoder().decode(jsonRequest.getAudioBase64());
+            if (speakerId == null || speakerId.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Speaker ID is required"
+                        )
+                );
             }
 
-            boolean enrolled = speakerService.enrollSpeaker(speakerId, audioBytes);
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Audio file is required"
+                        )
+                );
+            }
+
+            boolean enrolled =
+                    speakerService.enrollSpeaker(
+                            speakerId,
+                            file.getBytes()
+                    );
+
             if (!enrolled) {
-                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Invalid speaker ID"));
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Speaker enrollment failed"
+                        )
+                );
             }
 
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "speaker_id", speakerId,
-                    "message", "Speaker voice profile enrolled successfully"
-            ));
+            return ResponseEntity.ok(
+                    Map.of(
+                            "success", true,
+                            "speaker_id", speakerId.trim(),
+                            "message",
+                            "Speaker voice profile enrolled successfully"
+                    )
+            );
+
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("success", false, "error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(
+                    Map.of(
+                            "success", false,
+                            "error", e.getMessage()
+                    )
+            );
         }
     }
 
-    @PostMapping(value = "/verify", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
-    @Operation(summary = "Verify Speaker", description = "Verifies voice biometric similarity against enrolled profile")
-    public ResponseEntity<SpeakerVerifyResponse> verifySpeaker(
-            @RequestParam(value = "claimed_speaker_id", required = false) String speakerIdParam,
-            @RequestPart(value = "file", required = false) MultipartFile file,
-            @RequestBody(required = false) @Valid SpeakerVerifyRequest jsonRequest
-    ) {
-        String speakerId = jsonRequest != null ? jsonRequest.getClaimedSpeakerId() : speakerIdParam;
-        byte[] audioBytes = null;
+    // ------------------------------------------------------------
+    // JSON / BASE64 ENROLLMENT
+    // ------------------------------------------------------------
 
+    @PostMapping(
+            value = "/enroll",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    @Operation(
+            summary = "Enroll Speaker using Base64",
+            description = "Enrolls a speaker using Base64 encoded audio"
+    )
+    public ResponseEntity<Map<String, Object>> enrollSpeakerJson(
+            @RequestBody @Valid SpeakerEnrollRequest request
+    ) {
         try {
-            if (file != null && !file.isEmpty()) {
-                audioBytes = file.getBytes();
-            } else if (jsonRequest != null && jsonRequest.getAudioBase64() != null) {
-                audioBytes = Base64.getDecoder().decode(jsonRequest.getAudioBase64());
+            String speakerId = request.getSpeakerId();
+
+            if (speakerId == null || speakerId.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Speaker ID is required"
+                        )
+                );
             }
 
-            SpeakerVerifyResponse response = speakerService.verifySpeaker(speakerId, audioBytes);
+            if (request.getAudioBase64() == null
+                    || request.getAudioBase64().isBlank()) {
+
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Base64 audio is required"
+                        )
+                );
+            }
+
+            byte[] audioBytes =
+                    Base64.getDecoder().decode(
+                            request.getAudioBase64()
+                    );
+
+            boolean enrolled =
+                    speakerService.enrollSpeaker(
+                            speakerId,
+                            audioBytes
+                    );
+
+            if (!enrolled) {
+                return ResponseEntity.badRequest().body(
+                        Map.of(
+                                "success", false,
+                                "message", "Speaker enrollment failed"
+                        )
+                );
+            }
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "success", true,
+                            "speaker_id", speakerId.trim(),
+                            "message",
+                            "Speaker voice profile enrolled successfully"
+                    )
+            );
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of(
+                            "success", false,
+                            "message", "Invalid Base64 audio"
+                    )
+            );
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(
+                    Map.of(
+                            "success", false,
+                            "error", e.getMessage()
+                    )
+            );
+        }
+    }
+
+    // ------------------------------------------------------------
+    // MULTIPART VERIFICATION
+    // ------------------------------------------------------------
+
+    @PostMapping(
+            value = "/verify",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @Operation(
+            summary = "Verify Speaker",
+            description = "Verifies speaker identity using uploaded audio"
+    )
+    public ResponseEntity<SpeakerVerifyResponse> verifySpeakerMultipart(
+            @RequestParam("claimed_speaker_id") String speakerId,
+            @RequestPart("file") MultipartFile file
+    ) {
+        try {
+            if (speakerId == null || speakerId.trim().isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            SpeakerVerifyResponse response =
+                    speakerService.verifySpeaker(
+                            speakerId,
+                            file.getBytes()
+                    );
+
             return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    // ------------------------------------------------------------
+    // JSON / BASE64 VERIFICATION
+    // ------------------------------------------------------------
+
+    @PostMapping(
+            value = "/verify",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    @Operation(
+            summary = "Verify Speaker using Base64",
+            description = "Verifies speaker identity using Base64 encoded audio"
+    )
+    public ResponseEntity<SpeakerVerifyResponse> verifySpeakerJson(
+            @RequestBody @Valid SpeakerVerifyRequest request
+    ) {
+        try {
+            String speakerId =
+                    request.getClaimedSpeakerId();
+
+            if (speakerId == null || speakerId.trim().isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (request.getAudioBase64() == null
+                    || request.getAudioBase64().isBlank()) {
+
+                return ResponseEntity.badRequest().build();
+            }
+
+            byte[] audioBytes =
+                    Base64.getDecoder().decode(
+                            request.getAudioBase64()
+                    );
+
+            SpeakerVerifyResponse response =
+                    speakerService.verifySpeaker(
+                            speakerId,
+                            audioBytes
+                    );
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }

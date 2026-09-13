@@ -44,7 +44,7 @@ Thumbs.db
 ml/checkpoints/*.pt
 ml/checkpoints/*.pth
 !ml/checkpoints/.gitkeep
-speech/speaker_verification/weights/*.pt
+speech/speaker_verification/weights/*
 !speech/speaker_verification/weights/.gitkeep
 
 # Logs

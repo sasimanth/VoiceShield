@@ -1,5 +1,6 @@
 package com.voiceshield.backend;
 
+import org.springframework.mock.web.MockMultipartFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.voiceshield.risk.model.ContextMetadata;
 import com.voiceshield.risk.model.RiskSignalInput;
@@ -12,6 +13,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -33,7 +36,8 @@ public class BackendControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
-                .andExpect(jsonPath("$.service").value("VoiceShield-Java-Backend"));
+                .andExpect(jsonPath("$.service")
+                        .value("VoiceShield-Java-Backend"));
     }
 
     @Test
@@ -51,56 +55,140 @@ public class BackendControllerIntegrationTest {
         input.setCallerId("+91-9876543210");
         input.setTimestamp(Instant.now().toString());
         input.setNonce(UUID.randomUUID().toString());
+
         input.setDeepfakeProbability(0.87);
-        input.setSpeakerVerificationStatus(SpeakerVerificationStatus.MISMATCH);
+        input.setSpeakerVerificationStatus(
+                SpeakerVerificationStatus.MISMATCH
+        );
         input.setSpeakerSimilarity(0.25);
         input.setAcousticAnomaly(0.82);
         input.setProsodicAnomaly(0.79);
         input.setBehavioralAnomaly(0.65);
         input.setContext(context);
 
-        mockMvc.perform(post("/api/v1/risk/evaluate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(input)))
+        mockMvc.perform(
+                        post("/api/v1/risk/evaluate")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        objectMapper.writeValueAsString(input)
+                                )
+                )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.risk_score").isNumber())
-                .andExpect(jsonPath("$.risk_level").value("CRITICAL"))
-                .andExpect(jsonPath("$.decision").value("BLOCK"))
-                .andExpect(jsonPath("$.model_version").value("v1.2.0-composite-risk"));
+                .andExpect(jsonPath("$.risk_level")
+                        .value("CRITICAL"))
+                .andExpect(jsonPath("$.decision")
+                        .value("BLOCK"))
+                .andExpect(jsonPath("$.model_version")
+                        .value("v1.2.0-composite-risk"));
     }
 
     @Test
     void testAudioAnalyzeMultipartEndpoint() throws Exception {
-        MockMultipartFile audioFile = new MockMultipartFile(
-                "file",
-                "sample_voice.wav",
-                "audio/wav",
-                new byte[]{0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00}
+
+        /*
+         * Use a real WAV file instead of fake byte data.
+         *
+         * Maven runs this test from the backend directory:
+         *
+         * VoiceShield-Team/
+         * ├── backend/
+         * └── test_audio/
+         *
+         * Therefore ../test_audio points to the project-level
+         * test_audio directory.
+         */
+        Path audioPath = Path.of(
+                "..",
+                "test_audio",
+                "real_world",
+                "1188-133604-0000_16k.wav"
         );
 
-        mockMvc.perform(multipart("/api/v1/audio/analyze")
-                        .file(audioFile)
-                        .param("caller_id", "+91-9876543210")
-                        .param("transaction_amount", "25000.00")
-                        .param("currency", "INR"))
+        byte[] audioBytes = Files.readAllBytes(audioPath);
+
+        MockMultipartFile audioFile = new MockMultipartFile(
+                "file",
+                "1188-133604-0000_16k.wav",
+                "audio/wav",
+                audioBytes
+        );
+
+        mockMvc.perform(
+                        multipart("/api/v1/audio/analyze")
+                                .file(audioFile)
+                                .param(
+                                        "caller_id",
+                                        "+91-9876543210"
+                                )
+                                .param(
+                                        "transaction_amount",
+                                        "25000.00"
+                                )
+                                .param(
+                                        "currency",
+                                        "INR"
+                                )
+                )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.risk_score").isNumber())
-                .andExpect(jsonPath("$.decision").isNotEmpty());
+                .andExpect(jsonPath("$.risk_score")
+                        .isNumber())
+                .andExpect(jsonPath("$.decision")
+                        .isNotEmpty());
     }
 
     @Test
     void testSpeakerEnrollAndVerify() throws Exception {
-        mockMvc.perform(post("/api/v1/speaker/enroll")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"speaker_id\":\"USER-999\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
 
-        mockMvc.perform(post("/api/v1/speaker/verify")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"claimed_speaker_id\":\"USER-999\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").isNotEmpty())
-                .andExpect(jsonPath("$.is_match").value(true));
-    }
+    Path audioPath = Path.of(
+            "..",
+            "test_audio",
+            "real_world",
+            "1188-133604-0000_16k.wav"
+    );
+
+    byte[] audioBytes = Files.readAllBytes(audioPath);
+
+    MockMultipartFile audioFile =
+            new MockMultipartFile(
+                    "file",
+                    "1188-133604-0000_16k.wav",
+                    "audio/wav",
+                    audioBytes
+            );
+
+    mockMvc.perform(
+                    multipart("/api/v1/speaker/enroll")
+                            .file(audioFile)
+                            .param("speaker_id", "USER-999")
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success")
+                    .value(true))
+            .andExpect(jsonPath("$.speaker_id")
+                    .value("USER-999"));
+
+    mockMvc.perform(
+                    multipart("/api/v1/speaker/verify")
+                            .file(
+                                    new MockMultipartFile(
+                                            "file",
+                                            "1188-133604-0000_16k.wav",
+                                            "audio/wav",
+                                            audioBytes
+                                    )
+                            )
+                            .param(
+                                    "claimed_speaker_id",
+                                    "USER-999"
+                            )
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status")
+                    .value("MATCH"))
+            .andExpect(jsonPath("$.similarity_score")
+                    .isNumber())
+            .andExpect(jsonPath("$.is_match")
+                    .value(true));
+}
 }
