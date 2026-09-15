@@ -174,8 +174,9 @@ byte[] responseBytes = restClient.post()
         .contentType(MediaType.MULTIPART_FORM_DATA)
         .accept(MediaType.APPLICATION_JSON)
         .body(body)
-        .retrieve()
-        .body(byte[].class);
+        .exchange((request, response) ->
+                response.getBody().readAllBytes()
+        );
 
 if (responseBytes == null || responseBytes.length == 0) {
     throw new IllegalStateException(

@@ -26,7 +26,7 @@ voiceshield:
   ml-service:
     url: http://localhost:8001
     connect-timeout-ms: 3000
-    read-timeout-ms: 5000
+    read-timeout-ms: 30000
   speaker-verification:
     similarity-threshold: 0.4000
   cors:
