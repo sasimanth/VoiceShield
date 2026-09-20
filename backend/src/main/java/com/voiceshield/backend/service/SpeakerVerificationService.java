@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.voiceshield.backend.client.MlInferenceClient;
 import com.voiceshield.backend.dto.SpeakerVerifyResponse;
 import com.voiceshield.backend.entity.SpeakerProfile;
 import com.voiceshield.backend.repository.SpeakerProfileRepository;

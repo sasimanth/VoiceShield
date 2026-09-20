@@ -11,7 +11,7 @@ from sklearn.metrics import (
     classification_report
 )
 
-from ml.deepfake_detector.model import DeepfakeAASISTModel
+from ml.deepfake_detector.model import AASIST as DeepfakeAASISTModel
 
 
 # ============================================================
