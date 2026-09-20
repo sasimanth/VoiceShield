@@ -9,5 +9,8 @@ import com.voiceshield.backend.entity.SpeakerProfile;
 
 @Repository
 public interface SpeakerProfileRepository extends JpaRepository<SpeakerProfile, Long> {
+
     Optional<SpeakerProfile> findBySpeakerId(String speakerId);
+
+    boolean existsBySpeakerId(String speakerId);
 }

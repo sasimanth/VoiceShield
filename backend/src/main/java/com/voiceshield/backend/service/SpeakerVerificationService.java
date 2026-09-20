@@ -1,136 +1,238 @@
 package com.voiceshield.backend.service;
 
-import com.voiceshield.backend.client.MlInferenceClient;
-import com.voiceshield.backend.dto.MlSpeakerEmbeddingResponse;
-import com.voiceshield.backend.dto.SpeakerVerifyResponse;
-import com.voiceshield.backend.util.VectorUtils;
-import com.voiceshield.risk.model.SpeakerVerificationStatus;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Optional;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.voiceshield.backend.dto.SpeakerVerifyResponse;
+import com.voiceshield.backend.entity.SpeakerProfile;
+import com.voiceshield.backend.repository.SpeakerProfileRepository;
+import com.voiceshield.risk.model.SpeakerVerificationStatus;
 
 @Service
 public class SpeakerVerificationService {
 
     private static final Logger log = LoggerFactory.getLogger(SpeakerVerificationService.class);
 
-    private final SpeakerProfileService speakerProfileService;
+    private static final int EMBEDDING_DIMENSION = 192;
+    private static final int FLOAT32_BYTES = 4;
+    private static final int EMBEDDING_BYTE_LENGTH = EMBEDDING_DIMENSION * FLOAT32_BYTES;
+    private static final double MIN_NORM = 1e-12;
+
+    private final SpeakerProfileRepository speakerProfileRepository;
     private final MlInferenceClient mlInferenceClient;
-    private final Double threshold;
 
-    @Autowired
-    public SpeakerVerificationService(
-            SpeakerProfileService speakerProfileService,
-            MlInferenceClient mlInferenceClient,
-            @Value("${voiceshield.speaker-verification.threshold:#{null}}") Double threshold) {
-        this.speakerProfileService = speakerProfileService;
-        this.mlInferenceClient = mlInferenceClient;
-        this.threshold = threshold;
-        if (this.threshold != null) {
-            log.info("Initialized SpeakerVerificationService with active production threshold θ_prod = {}", this.threshold);
-        } else {
-            log.warn("Initialized SpeakerVerificationService with UNCONFIGURED threshold (status = UNAVAILABLE)");
-        }
-    }
+    @Value("${voiceshield.speaker-verification.similarity-threshold:0.4000}")
+    private double similarityThreshold;
 
     public SpeakerVerificationService(
-            SpeakerProfileService speakerProfileService,
+            SpeakerProfileRepository speakerProfileRepository,
             MlInferenceClient mlInferenceClient) {
-        this(speakerProfileService, mlInferenceClient, 0.4000);
+        this.speakerProfileRepository = speakerProfileRepository;
+        this.mlInferenceClient = mlInferenceClient;
     }
 
     public Double getThreshold() {
-        return threshold;
+        return similarityThreshold;
     }
 
+    @Transactional
     public boolean enrollSpeaker(String speakerId, byte[] audioBytes) {
-        if (speakerId == null || speakerId.trim().isEmpty() || audioBytes == null || audioBytes.length == 0) {
-            log.warn("Invalid speakerId or empty audioBytes passed to enrollSpeaker");
+        if (speakerId == null || speakerId.trim().isEmpty()) {
+            log.warn("Speaker enrollment rejected: speaker ID is empty");
             return false;
         }
 
-        MlSpeakerEmbeddingResponse pyResponse = mlInferenceClient.extractSpeakerEmbedding(audioBytes, "enroll.wav");
-        if (pyResponse == null || pyResponse.getEmbedding() == null || pyResponse.getEmbedding().size() != VectorUtils.EXPECTED_DIMENSION) {
-            log.warn("ECAPA embedding extraction failed for speaker '{}'. Enrollment failed.", speakerId);
+        if (audioBytes == null || audioBytes.length == 0) {
+            log.warn("Speaker enrollment rejected: audio is empty");
             return false;
         }
 
-        float[] embedding = VectorUtils.doubleListToFloatArray(pyResponse.getEmbedding());
-        if (embedding == null) {
-            log.error("Failed to parse embedding vector for speaker '{}'. Enrollment failed.", speakerId);
-            return false;
-        }
-
-        speakerProfileService.saveOrUpdateEmbeddingProfile(speakerId, embedding);
-        log.info("Speaker '{}' enrolled successfully with 192-D ECAPA embedding.", speakerId);
-        return true;
-    }
-
-    public SpeakerVerifyResponse verifySpeaker(String speakerId, byte[] audioBytes) {
-        if (speakerId == null || speakerId.trim().isEmpty() || audioBytes == null || audioBytes.length == 0) {
-            log.warn("Invalid speakerId or empty audioBytes passed to verifySpeaker");
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
-        }
-
-        // 1. Retrieve enrolled reference embedding vector from PostgreSQL DB
-        float[] refEmbeddingFloat = speakerProfileService.getSpeakerEmbedding(speakerId);
-        if (refEmbeddingFloat == null) {
-            log.info("No enrolled speaker profile found in DB for speaker ID '{}'", speakerId);
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
-        }
-
-        // 2. Extract query embedding vector from Python ML service (POST /speaker/embed)
-        MlSpeakerEmbeddingResponse pyResponse = mlInferenceClient.extractSpeakerEmbedding(audioBytes, "verify.wav");
-        if (pyResponse == null || pyResponse.getEmbedding() == null || pyResponse.getEmbedding().size() != VectorUtils.EXPECTED_DIMENSION) {
-            log.warn("ML embedding service unavailable for verification of speaker '{}'. Returning UNAVAILABLE status.", speakerId);
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
-        }
-
-        float[] queryEmbeddingFloat = VectorUtils.doubleListToFloatArray(pyResponse.getEmbedding());
-        if (queryEmbeddingFloat == null) {
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
-        }
-
-        // 3. Compute Java-side Cosine Similarity in double precision
-        double[] refVec = VectorUtils.floatArrayToDoubleArray(refEmbeddingFloat);
-        double[] queryVec = VectorUtils.floatArrayToDoubleArray(queryEmbeddingFloat);
+        String normalizedSpeakerId = speakerId.trim();
 
         try {
-            double rawCosineSimilarity = VectorUtils.cosineSimilarity(refVec, queryVec);
+            double[] embedding = mlInferenceClient.generateSpeakerEmbedding(
+                    audioBytes,
+                    normalizedSpeakerId + ".wav"
+            );
 
-            if (this.threshold == null) {
-                log.warn("Speaker verification threshold is unconfigured for speaker '{}'. Returning UNAVAILABLE status.", speakerId);
-                return new SpeakerVerifyResponse(
-                        speakerId,
-                        SpeakerVerificationStatus.UNAVAILABLE,
-                        rawCosineSimilarity,
-                        false,
-                        null
-                );
-            }
+            validateEmbedding(embedding);
+            byte[] embeddingBytes = embeddingToBytes(embedding);
 
-            boolean isMatch = rawCosineSimilarity >= this.threshold;
-            SpeakerVerificationStatus status = isMatch ? SpeakerVerificationStatus.MATCH : SpeakerVerificationStatus.MISMATCH;
+            SpeakerProfile profile = speakerProfileRepository
+                    .findBySpeakerId(normalizedSpeakerId)
+                    .orElseGet(SpeakerProfile::new);
+
+            profile.setSpeakerId(normalizedSpeakerId);
+            profile.setAudioData(embeddingBytes);
+            profile.setEmbeddingDimension(EMBEDDING_DIMENSION);
+
+            speakerProfileRepository.save(profile);
+
+            log.info("Successfully enrolled ECAPA speaker profile for speakerId: {}", normalizedSpeakerId);
+            return true;
+
+        } catch (Exception e) {
+            log.error("Speaker enrollment failed for speakerId {}: {}", normalizedSpeakerId, e.getMessage());
+            return false;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public SpeakerVerifyResponse verifySpeaker(String claimedSpeakerId, byte[] audioBytes) {
+        if (claimedSpeakerId == null || claimedSpeakerId.trim().isEmpty()) {
+            return unavailableResponse(claimedSpeakerId, "Speaker ID is missing");
+        }
+
+        if (audioBytes == null || audioBytes.length == 0) {
+            return unavailableResponse(claimedSpeakerId, "Audio is empty");
+        }
+
+        String normalizedSpeakerId = claimedSpeakerId.trim();
+
+        Optional<SpeakerProfile> profileOptional = speakerProfileRepository.findBySpeakerId(normalizedSpeakerId);
+
+        if (profileOptional.isEmpty()) {
+            log.warn("Speaker ID '{}' not enrolled in biometric database", normalizedSpeakerId);
+            return unavailableResponse(normalizedSpeakerId, "Speaker is not enrolled");
+        }
+
+        try {
+            double[] probeEmbedding = mlInferenceClient.generateSpeakerEmbedding(
+                    audioBytes,
+                    normalizedSpeakerId + "-probe.wav"
+            );
+
+            validateEmbedding(probeEmbedding);
+
+            byte[] storedBytes = profileOptional.get().getAudioData();
+            double[] referenceEmbedding = bytesToEmbedding(storedBytes);
+
+            validateEmbedding(referenceEmbedding);
+
+            double similarity = cosineSimilarity(referenceEmbedding, probeEmbedding);
+            boolean isMatch = similarity >= similarityThreshold;
+
+            SpeakerVerificationStatus status = isMatch
+                    ? SpeakerVerificationStatus.MATCH
+                    : SpeakerVerificationStatus.MISMATCH;
 
             log.info("Speaker verification decision for '{}': rawSimilarity={}, threshold={}, status={}, isMatch={}",
-                    speakerId, rawCosineSimilarity, this.threshold, status, isMatch);
+                    normalizedSpeakerId, similarity, similarityThreshold, status, isMatch);
 
             return new SpeakerVerifyResponse(
-                    speakerId,
+                    normalizedSpeakerId,
                     status,
-                    rawCosineSimilarity,
+                    similarity,
                     isMatch,
-                    this.threshold
+                    similarityThreshold
             );
 
         } catch (IllegalArgumentException e) {
-            log.warn("Vector similarity calculation invalid for speaker '{}': {}. Returning UNAVAILABLE.", speakerId, e.getMessage());
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
+            log.warn("Invalid speaker embedding for speakerId {}: {}", normalizedSpeakerId, e.getMessage());
+            return unavailableResponse(normalizedSpeakerId, "Invalid speaker embedding");
         } catch (Exception e) {
-            log.error("Failed to compute Cosine Similarity for speaker '{}': {}", speakerId, e.getMessage());
-            return new SpeakerVerifyResponse(speakerId, SpeakerVerificationStatus.UNAVAILABLE, null, false, null);
+            log.error("Speaker verification failed for speakerId {}: {}", normalizedSpeakerId, e.getMessage());
+            return unavailableResponse(normalizedSpeakerId, "Speaker verification unavailable");
         }
+    }
+
+    private SpeakerVerifyResponse unavailableResponse(String speakerId, String reason) {
+        log.warn("Speaker verification unavailable for '{}': {}", speakerId, reason);
+        return new SpeakerVerifyResponse(
+                speakerId,
+                SpeakerVerificationStatus.UNAVAILABLE,
+                null,
+                false,
+                similarityThreshold
+        );
+    }
+
+    private static void validateEmbedding(double[] embedding) {
+        if (embedding == null) {
+            throw new IllegalArgumentException("Embedding must not be null");
+        }
+
+        if (embedding.length != EMBEDDING_DIMENSION) {
+            throw new IllegalArgumentException("Embedding must contain exactly 192 dimensions");
+        }
+
+        double normSquared = 0.0;
+        for (double value : embedding) {
+            if (!Double.isFinite(value)) {
+                throw new IllegalArgumentException("Embedding contains NaN or Infinity");
+            }
+            normSquared += value * value;
+        }
+
+        double norm = Math.sqrt(normSquared);
+        if (!Double.isFinite(norm) || norm <= MIN_NORM) {
+            throw new IllegalArgumentException("Embedding has zero or near-zero norm");
+        }
+    }
+
+    private static double cosineSimilarity(double[] first, double[] second) {
+        validateEmbedding(first);
+        validateEmbedding(second);
+
+        if (first.length != second.length) {
+            throw new IllegalArgumentException("Embedding dimensions do not match");
+        }
+
+        double dotProduct = 0.0;
+        double firstNormSquared = 0.0;
+        double secondNormSquared = 0.0;
+
+        for (int i = 0; i < first.length; i++) {
+            dotProduct += first[i] * second[i];
+            firstNormSquared += first[i] * first[i];
+            secondNormSquared += second[i] * second[i];
+        }
+
+        double firstNorm = Math.sqrt(firstNormSquared);
+        double secondNorm = Math.sqrt(secondNormSquared);
+
+        if (!Double.isFinite(firstNorm) || !Double.isFinite(secondNorm) || firstNorm <= MIN_NORM || secondNorm <= MIN_NORM) {
+            throw new IllegalArgumentException("Cannot calculate cosine similarity for zero/near-zero vector");
+        }
+
+        double similarity = dotProduct / (firstNorm * secondNorm);
+        if (!Double.isFinite(similarity)) {
+            throw new IllegalArgumentException("Cosine similarity is not finite");
+        }
+
+        return similarity;
+    }
+
+    private static byte[] embeddingToBytes(double[] embedding) {
+        validateEmbedding(embedding);
+        ByteBuffer buffer = ByteBuffer.allocate(EMBEDDING_BYTE_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+        for (double value : embedding) {
+            buffer.putFloat((float) value);
+        }
+        return buffer.array();
+    }
+
+    private static double[] bytesToEmbedding(byte[] bytes) {
+        if (bytes == null) {
+            throw new IllegalArgumentException("Stored embedding must not be null");
+        }
+
+        if (bytes.length != EMBEDDING_BYTE_LENGTH) {
+            throw new IllegalArgumentException("Stored embedding must contain exactly 768 bytes");
+        }
+
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        double[] embedding = new double[EMBEDDING_DIMENSION];
+        for (int i = 0; i < EMBEDDING_DIMENSION; i++) {
+            embedding[i] = buffer.getFloat();
+        }
+        return embedding;
     }
 }

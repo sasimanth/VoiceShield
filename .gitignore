@@ -57,6 +57,7 @@ evaluation/results/*.wav
 evaluation/results/*.mp3
 evaluation/results/*.flac
 speech/speaker_verification/weights/*.pt
+speech/speaker_verification/weights/*
 !speech/speaker_verification/weights/.gitkeep
 
 # Logs

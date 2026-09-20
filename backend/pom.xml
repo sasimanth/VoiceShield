@@ -2,6 +2,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -14,6 +15,7 @@
     <groupId>com.voiceshield</groupId>
     <artifactId>backend</artifactId>
     <version>1.0.0</version>
+
     <name>VoiceShield Backend API</name>
     <description>VoiceShield Java Spring Boot Backend Service (SIH 2026)</description>
 
@@ -23,6 +25,7 @@
     </properties>
 
     <dependencies>
+
         <!-- Spring Boot Web Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -59,11 +62,21 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
-        <!-- PostgreSQL Driver -->
+        <!-- PostgreSQL JDBC Driver -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Flyway Database Migration -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
         <!-- Swagger / OpenAPI Documentation -->
@@ -73,7 +86,7 @@
             <version>${springdoc.version}</version>
         </dependency>
 
-        <!-- VoiceShield Risk Engine Integration (In-Memory Module) -->
+        <!-- VoiceShield Risk Engine -->
         <dependency>
             <groupId>com.voiceshield</groupId>
             <artifactId>risk-engine</artifactId>
@@ -97,10 +110,12 @@
 
     <build>
         <plugins>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
         </plugins>
     </build>
 </project>

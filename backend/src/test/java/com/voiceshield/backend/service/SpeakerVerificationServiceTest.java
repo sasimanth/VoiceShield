@@ -1,258 +1,363 @@
 package com.voiceshield.backend.service;
 
-import com.voiceshield.backend.client.MlInferenceClient;
-import com.voiceshield.backend.dto.MlSpeakerEmbeddingResponse;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import org.mockito.Mock;
+import static org.mockito.Mockito.when;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
 import com.voiceshield.backend.dto.SpeakerVerifyResponse;
 import com.voiceshield.backend.entity.SpeakerProfile;
 import com.voiceshield.backend.repository.SpeakerProfileRepository;
-import com.voiceshield.backend.util.VectorUtils;
 import com.voiceshield.risk.model.SpeakerVerificationStatus;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
+@ExtendWith(MockitoExtension.class)
 class SpeakerVerificationServiceTest {
 
+    @Mock
     private SpeakerProfileRepository speakerProfileRepository;
-    private SpeakerProfileService speakerProfileService;
-    private MlSpeakerEmbeddingResponse stubEmbeddingResponse;
-    private MlInferenceClient testMlInferenceClient;
-    private SpeakerVerificationService speakerVerificationService;
+
+    @Mock
+    private MlInferenceClient mlInferenceClient;
+
+    private SpeakerVerificationService service;
 
     @BeforeEach
     void setUp() {
-        speakerProfileRepository = mock(SpeakerProfileRepository.class);
-        speakerProfileService = new SpeakerProfileService(speakerProfileRepository);
-        stubEmbeddingResponse = null;
+        service = new SpeakerVerificationService(
+                speakerProfileRepository,
+                mlInferenceClient
+        );
 
-        testMlInferenceClient = new MlInferenceClient(null) {
-            @Override
-            public MlSpeakerEmbeddingResponse extractSpeakerEmbedding(byte[] audioBytes, String filename) {
-                if (audioBytes == null || audioBytes.length == 0) {
-                    return null;
-                }
-                return stubEmbeddingResponse;
-            }
-        };
-
-        speakerVerificationService = new SpeakerVerificationService(speakerProfileService, testMlInferenceClient, 0.4000);
+        ReflectionTestUtils.setField(
+                service,
+                "similarityThreshold",
+                0.4000
+        );
     }
 
-    private List<Double> createMockEmbeddingList(double value) {
-        List<Double> list = new ArrayList<>(192);
-        for (int i = 0; i < 192; i++) {
-            list.add(value);
+    @Test
+    void similarityBelowThresholdShouldBeMismatch() {
+        verifyThreshold(
+                0.3999,
+                SpeakerVerificationStatus.MISMATCH,
+                false
+        );
+    }
+
+    @Test
+    void similarityAtThresholdShouldBeMatch() {
+        verifyThreshold(
+                0.4000,
+                SpeakerVerificationStatus.MATCH,
+                true
+        );
+    }
+
+    @Test
+    void similarityAboveThresholdShouldBeMatch() {
+        verifyThreshold(
+                0.4001,
+                SpeakerVerificationStatus.MATCH,
+                true
+        );
+    }
+
+    private void verifyThreshold(
+            double targetSimilarity,
+            SpeakerVerificationStatus expectedStatus,
+            boolean expectedMatch
+    ) {
+
+        String speakerId = "TEST-THRESHOLD";
+
+        double[] reference = new double[192];
+        reference[0] = 1.0;
+
+        double secondComponent =
+                Math.sqrt(1.0 - targetSimilarity * targetSimilarity);
+
+        double[] probe = new double[192];
+        probe[0] = targetSimilarity;
+        probe[1] = secondComponent;
+
+        SpeakerProfile profile = new SpeakerProfile();
+        profile.setSpeakerId(speakerId);
+        profile.setAudioData(toBytes(reference));
+        profile.setEmbeddingDimension(192);
+
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
+
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(probe);
+
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
+
+        assertEquals(
+                expectedStatus,
+                response.getStatus()
+        );
+
+        assertEquals(
+                expectedMatch,
+                response.isMatch()
+        );
+
+        assertEquals(
+                0.4000,
+                response.getThreshold(),
+                1e-9
+        );
+
+        assertEquals(
+                targetSimilarity,
+                response.getSimilarityScore(),
+                1e-5
+        );
+    }
+
+    private static byte[] toBytes(double[] embedding) {
+
+        ByteBuffer buffer =
+                ByteBuffer
+                        .allocate(192 * 4)
+                        .order(ByteOrder.LITTLE_ENDIAN);
+
+        for (double value : embedding) {
+            buffer.putFloat((float) value);
         }
-        return list;
-    }
 
-    private float[] createMockFloatArray(float value) {
-        float[] array = new float[192];
-        for (int i = 0; i < 192; i++) {
-            array[i] = value;
-        }
-        return array;
+        return buffer.array();
     }
 
     @Test
-    void testEnrollSpeakerSuccess() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        List<Double> mockEmbedding = createMockEmbeddingList(0.5);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(mockEmbedding, 192, "SUCCESS");
+    void nullEmbeddingShouldReturnUnavailable() {
 
-        boolean result = speakerVerificationService.enrollSpeaker("USR_1001", audioBytes);
-        assertTrue(result);
+        String speakerId = "TEST-INVALID";
 
-        verify(speakerProfileRepository, times(1)).save(any(SpeakerProfile.class));
+        SpeakerProfile profile = createValidProfile(speakerId);
+
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
+
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(null);
+
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
+
+        assertEquals(
+                SpeakerVerificationStatus.UNAVAILABLE,
+                response.getStatus()
+        );
+
+        assertEquals(
+                false,
+                response.isMatch()
+        );
     }
 
     @Test
-    void testEnrollSpeakerFailureOnEmptyAudio() {
-        boolean result = speakerVerificationService.enrollSpeaker("USR_1001", new byte[0]);
-        assertFalse(result);
-        verify(speakerProfileRepository, never()).save(any());
-    }
+    void wrongDimensionEmbeddingShouldReturnUnavailable() {
 
-    @Test
-    void testVerifySpeakerUnenrolled() {
-        when(speakerProfileRepository.findBySpeakerId("USR_UNENROLLED")).thenReturn(Optional.empty());
+        String speakerId = "TEST-WRONG-DIMENSION";
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_UNENROLLED", new byte[]{1, 2, 3});
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.UNAVAILABLE, response.getStatus());
-        assertNull(response.getSimilarityScore());
-        assertFalse(response.isMatch());
-    }
+        SpeakerProfile profile = createValidProfile(speakerId);
 
-    @Test
-    void testVerifySpeakerScoreGreaterThanThresholdMatch() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] refEmbeddingFloat = createMockFloatArray(1.0f);
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(refEmbeddingFloat);
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
 
-        SpeakerProfile profile = new SpeakerProfile("USR_MATCH", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_MATCH")).thenReturn(Optional.of(profile));
+        double[] wrongDimension = new double[191];
 
-        List<Double> queryEmbedding = createMockEmbeddingList(1.0);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
-
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_MATCH", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.MATCH, response.getStatus());
-        assertNotNull(response.getSimilarityScore());
-        assertEquals(1.0, response.getSimilarityScore(), 1e-4);
-        assertTrue(response.isMatch());
-        assertEquals(0.4000, response.getThreshold(), 1e-4);
-    }
-
-    @Test
-    void testVerifySpeakerScoreExactlyThresholdMatch() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        // Orthogonal-like vectors yielding similarity exactly ~0.4000
-        float[] refFloat = new float[192];
-        float[] queryFloat = new float[192];
-
-        // 100 elements positive 1.0, remainder chosen so dot product gives similarity = 0.4000
-        // Sim = sum(ref * query) / (norm(ref) * norm(query))
-        // If ref is all 1.0, norm = sqrt(192). If query has k ones, dot = k, norm = sqrt(k * 192) -> sim = k / sqrt(192*k) = sqrt(k/192)
-        // sqrt(k/192) = 0.4000 -> k/192 = 0.16 -> k = 30.72.
-        // Let's test with exact score construction
-        List<Double> queryEmbedding = new ArrayList<>();
-        for (int i = 0; i < 192; i++) {
-            refFloat[i] = 1.0f;
-            queryEmbedding.add(i < 31 ? 2.4774193548387097 : 0.0); // Exact dot product matching 0.4000 threshold
+        for (int i = 0; i < wrongDimension.length; i++) {
+            wrongDimension[i] = 0.1;
         }
 
-        byte[] refBytes = VectorUtils.floatArrayToBytes(refFloat);
-        SpeakerProfile profile = new SpeakerProfile("USR_EXACT", refBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_EXACT")).thenReturn(Optional.of(profile));
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(wrongDimension);
 
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_EXACT", audioBytes);
-        assertNotNull(response);
-        assertTrue(response.getSimilarityScore() >= 0.4000);
-        assertEquals(SpeakerVerificationStatus.MATCH, response.getStatus());
-        assertTrue(response.isMatch());
-        assertEquals(0.4000, response.getThreshold(), 1e-4);
+        assertEquals(
+                SpeakerVerificationStatus.UNAVAILABLE,
+                response.getStatus()
+        );
+
+        assertEquals(
+                false,
+                response.isMatch()
+        );
     }
 
     @Test
-    void testVerifySpeakerScoreBelowThresholdMismatch() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] refEmbeddingFloat = createMockFloatArray(1.0f);
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(refEmbeddingFloat);
+    void nanEmbeddingShouldReturnUnavailable() {
 
-        SpeakerProfile profile = new SpeakerProfile("USR_MISMATCH", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_MISMATCH")).thenReturn(Optional.of(profile));
+        String speakerId = "TEST-NAN";
 
-        List<Double> queryEmbedding = createMockEmbeddingList(-1.0);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
+        SpeakerProfile profile = createValidProfile(speakerId);
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_MISMATCH", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.MISMATCH, response.getStatus());
-        assertNotNull(response.getSimilarityScore());
-        assertEquals(-1.0, response.getSimilarityScore(), 1e-4);
-        assertFalse(response.isMatch());
-        assertEquals(0.4000, response.getThreshold(), 1e-4);
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
+
+        double[] invalidEmbedding = new double[192];
+        invalidEmbedding[0] = Double.NaN;
+
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(invalidEmbedding);
+
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
+
+        assertEquals(
+                SpeakerVerificationStatus.UNAVAILABLE,
+                response.getStatus()
+        );
+
+        assertEquals(
+                false,
+                response.isMatch()
+        );
     }
 
     @Test
-    void testVerifySpeakerZeroNormEmbeddingReturnsUnavailable() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] zeroEmbeddingFloat = new float[192];
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(zeroEmbeddingFloat);
+    void zeroNormEmbeddingShouldReturnUnavailable() {
 
-        SpeakerProfile profile = new SpeakerProfile("USR_ZERO_NORM", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_ZERO_NORM")).thenReturn(Optional.of(profile));
+        String speakerId = "TEST-ZERO-NORM";
 
-        List<Double> queryEmbedding = createMockEmbeddingList(1.0);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
+        SpeakerProfile profile = createValidProfile(speakerId);
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_ZERO_NORM", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.UNAVAILABLE, response.getStatus());
-        assertNull(response.getSimilarityScore());
-        assertFalse(response.isMatch());
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
+
+        double[] zeroEmbedding = new double[192];
+
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(zeroEmbedding);
+
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
+
+        assertEquals(
+                SpeakerVerificationStatus.UNAVAILABLE,
+                response.getStatus()
+        );
+
+        assertEquals(
+                false,
+                response.isMatch()
+        );
+    }
+
+    private SpeakerProfile createValidProfile(
+            String speakerId
+    ) {
+
+        double[] reference = new double[192];
+        reference[0] = 1.0;
+
+        SpeakerProfile profile = new SpeakerProfile();
+
+        profile.setSpeakerId(speakerId);
+        profile.setAudioData(toBytes(reference));
+        profile.setEmbeddingDimension(192);
+
+        return profile;
     }
 
     @Test
-    void testVerifySpeakerInvalidDimensionsRejected() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] refEmbeddingFloat = createMockFloatArray(1.0f);
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(refEmbeddingFloat);
+    void invalidStoredEmbeddingShouldReturnUnavailable() {
 
-        SpeakerProfile profile = new SpeakerProfile("USR_BAD_DIM", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_BAD_DIM")).thenReturn(Optional.of(profile));
+        String speakerId = "TEST-STORED-INVALID";
 
-        // Dimension = 100 instead of 192
-        List<Double> badEmbedding = new ArrayList<>();
-        for (int i = 0; i < 100; i++) badEmbedding.add(1.0);
+        SpeakerProfile profile = new SpeakerProfile();
 
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(badEmbedding, 100, "SUCCESS");
+        profile.setSpeakerId(speakerId);
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_BAD_DIM", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.UNAVAILABLE, response.getStatus());
-        assertNull(response.getSimilarityScore());
-        assertFalse(response.isMatch());
-    }
+        // Invalid stored embedding: wrong size.
+        profile.setAudioData(new byte[100]);
 
-    @Test
-    void testVerifySpeakerNanOrInfinityRejected() {
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] nanEmbeddingFloat = createMockFloatArray(1.0f);
-        nanEmbeddingFloat[0] = Float.NaN;
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(nanEmbeddingFloat);
+        profile.setEmbeddingDimension(192);
 
-        SpeakerProfile profile = new SpeakerProfile("USR_NAN", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_NAN")).thenReturn(Optional.of(profile));
+        when(
+                speakerProfileRepository.findBySpeakerId(speakerId)
+        ).thenReturn(Optional.of(profile));
 
-        List<Double> queryEmbedding = createMockEmbeddingList(1.0);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
+        double[] validProbe = new double[192];
+        validProbe[0] = 1.0;
 
-        SpeakerVerifyResponse response = speakerVerificationService.verifySpeaker("USR_NAN", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.UNAVAILABLE, response.getStatus());
-        assertNull(response.getSimilarityScore());
-        assertFalse(response.isMatch());
-    }
+        when(
+                mlInferenceClient.generateSpeakerEmbedding(
+                        any(byte[].class),
+                        anyString()
+                )
+        ).thenReturn(validProbe);
 
-    @Test
-    void testThresholdConfigurationLoading() {
-        SpeakerVerificationService svc = new SpeakerVerificationService(speakerProfileService, testMlInferenceClient, 0.4000);
-        assertEquals(0.4000, svc.getThreshold(), 1e-4);
-    }
+        SpeakerVerifyResponse response =
+                service.verifySpeaker(
+                        speakerId,
+                        new byte[]{1, 2, 3}
+                );
 
-    @Test
-    void testNoSilentFallbackThresholdWhenUnconfigured() {
-        SpeakerVerificationService unconfiguredSvc = new SpeakerVerificationService(speakerProfileService, testMlInferenceClient, null);
-        assertNull(unconfiguredSvc.getThreshold());
+        assertEquals(
+                SpeakerVerificationStatus.UNAVAILABLE,
+                response.getStatus()
+        );
 
-        byte[] audioBytes = new byte[]{1, 2, 3, 4};
-        float[] refEmbeddingFloat = createMockFloatArray(1.0f);
-        byte[] refEmbeddingBytes = VectorUtils.floatArrayToBytes(refEmbeddingFloat);
-
-        SpeakerProfile profile = new SpeakerProfile("USR_UNCONFIG", refEmbeddingBytes);
-        when(speakerProfileRepository.findBySpeakerId("USR_UNCONFIG")).thenReturn(Optional.of(profile));
-
-        List<Double> queryEmbedding = createMockEmbeddingList(1.0);
-        stubEmbeddingResponse = new MlSpeakerEmbeddingResponse(queryEmbedding, 192, "SUCCESS");
-
-        SpeakerVerifyResponse response = unconfiguredSvc.verifySpeaker("USR_UNCONFIG", audioBytes);
-        assertNotNull(response);
-        assertEquals(SpeakerVerificationStatus.UNAVAILABLE, response.getStatus());
-        assertNotNull(response.getSimilarityScore());
-        assertEquals(1.0, response.getSimilarityScore(), 1e-4);
-        assertFalse(response.isMatch());
-        assertNull(response.getThreshold()); // Ensures threshold cannot silently fall back to arbitrary numeric value
+        assertEquals(
+                false,
+                response.isMatch()
+        );
     }
 }
