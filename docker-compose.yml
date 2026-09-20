@@ -1,33 +1,38 @@
 services:
-  voiceshield-postgres:
-    image: postgres:17-alpine
+  postgres:
+    image: postgres:16-alpine
     container_name: voiceshield-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: VoiceShield
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD environment variable must be provided}
+      POSTGRES_DB: ${POSTGRES_DB:-VoiceShield}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5432:5432"
+    volumes:
+      - voiceshield_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d VoiceShield"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-VoiceShield}"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
-  voiceshield-ml:
+  ml_service:
     build:
       context: .
       dockerfile: ml_service/Dockerfile
     container_name: voiceshield-ml
     ports:
       - "8001:8001"
+    environment:
+      ENVIRONMENT: development
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  voiceshield-backend:
+  backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -35,13 +40,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://voiceshield-postgres:5432/VoiceShield
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD environment variable must be provided}
-      ML_SERVICE_URL: http://voiceshield-ml:8001
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-VoiceShield}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      ML_SERVICE_URL: http://ml_service:8001
+      SPRING_PROFILES_ACTIVE: dev
     depends_on:
-      voiceshield-postgres:
+      postgres:
         condition: service_healthy
-      voiceshield-ml:
+      ml_service:
         condition: service_started
+
+volumes:
+  voiceshield_postgres_data:

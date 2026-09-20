@@ -20,6 +20,10 @@ public class MlInferenceClient {
     private static final Logger log = LoggerFactory.getLogger(MlInferenceClient.class);
     private final RestClient mlRestClient;
 
+    public MlInferenceClient() {
+        this.mlRestClient = null;
+    }
+
     public MlInferenceClient(RestClient mlRestClient) {
         this.mlRestClient = mlRestClient;
     }
@@ -99,8 +103,7 @@ public class MlInferenceClient {
                     .retrieve()
                     .body(MlSpeakerEmbeddingResponse.class);
 
-            if (response != null && "SUCCESS".equalsIgnoreCase(response.getStatus())
-                    && response.getEmbedding() != null && response.getEmbedding().size() == 192) {
+            if (response != null && response.getEmbedding() != null && response.getEmbedding().size() == 192) {
                 log.info("Successfully received 192-D speaker embedding from Python ML service");
                 return response;
             } else {
@@ -112,6 +115,18 @@ public class MlInferenceClient {
             log.error("Speaker embedding HTTP communication failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    public double[] generateSpeakerEmbedding(byte[] audioBytes, String filename) {
+        MlSpeakerEmbeddingResponse response = extractSpeakerEmbedding(audioBytes, filename);
+        if (response == null || response.getEmbedding() == null || response.getEmbedding().size() != 192) {
+            throw new IllegalStateException("Speaker embedding generation failed.");
+        }
+        double[] embedding = new double[192];
+        for (int i = 0; i < 192; i++) {
+            embedding[i] = response.getEmbedding().get(i);
+        }
+        return embedding;
     }
 
     private static class PythonFeatureResponse {
