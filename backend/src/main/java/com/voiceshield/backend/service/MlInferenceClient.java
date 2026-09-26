@@ -117,18 +117,34 @@ Map<String, Object> response =
             }
 
             return response;
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
 
-        } catch (Exception e) {
+    log.error(
+            "Python ML Service rejected the audio at {}: {}",
+            mlServiceUrl,
+            e.getMessage()
+    );
 
-            log.warn(
-                    "Python ML Service at {} unreachable ({}). "
-                            + "Using development fallback features.",
-                    mlServiceUrl,
-                    e.getMessage()
-            );
+    throw new IllegalArgumentException(
+            "Invalid or unsupported audio file.",
+            e
+    );
 
-            return generateMockMlFeatures(audioBytes);
-        }
+} catch (Exception e) {
+
+    log.error(
+            "Python ML Service inference failed at {}: {}",
+            mlServiceUrl,
+            e.getMessage()
+    );
+
+    throw new IllegalStateException(
+            "ML service inference failed.",
+            e
+    );
+}
+
+
     }
 
     /**

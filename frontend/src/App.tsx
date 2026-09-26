@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -10,22 +10,59 @@ import {
   Lock,
   FileAudio,
   AlertTriangle,
-  CheckCircle2,
-  XCircle,
   TrendingUp,
   Server,
   Fingerprint,
   Waves
 } from 'lucide-react';
-import { AudioAnalysisResponse } from './types/index.ts';
+interface BackendAnalysisResponse {
+  session_id: string;
+  risk_score: number;
+  risk_level: string;
+  decision: string;
+  reasons: string[];
+  model_version: string;
+  timestamp: string;
+  component_breakdown: {
+    deepfake_probability: number;
+    contextual_risk: number;
+    prosodic_anomaly: number;
+    acoustic_anomaly: number;
+    behavioral_anomaly: number;
+    speaker_verification_status: string;
+    speaker_similarity: number | null;
+  };
+  security_metadata: {
+    zero_retention_verified: boolean;
+    session_hash: string;
+    replay_nonce_valid: boolean;
+  };
+  raw_ml_features: {
+    success: boolean;
+    deepfake_probability: number;
+    bonafide_probability: number;
+    classification: string;
+    synthetic_probability: number;
+    spectral_metrics: {
+      spectral_centroid_hz: number;
+      spectral_flatness: number;
+      spectral_rolloff_hz: number;
+      zero_crossing_rate: number;
+      high_freq_energy_ratio: number;
+      acoustic_anomaly_score: number;
+    };
+    model_status: string;
+    source: string;
+  };
+}
 
-const BACKEND_URL = 'http://localhost:8000/api/v1';
+const BACKEND_URL = 'http://localhost:8080/api/v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'live' | 'enroll'>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [result, setResult] = useState<AudioAnalysisResponse | null>(null);
+  const [result, setResult] = useState<BackendAnalysisResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Context form inputs
@@ -36,11 +73,10 @@ export default function App() {
 
   // Live stream state
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [liveScore, setLiveScore] = useState<number>(12);
-  const [liveTier, setLiveTier] = useState<string>('LOW');
-  const wsRef = useRef<WebSocket | null>(null);
+  const [liveScore] = useState<number>(12);
+  const [liveTier] = useState<string>('LOW');
 
-  const handleFileUpload = async (e: React.FormEvent) => {
+  const handleFileUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!file) {
       setError('Please select an audio file (WAV, MP3, FLAC) to analyze.');
@@ -67,7 +103,7 @@ export default function App() {
         throw new Error(`Server returned error: ${response.statusText}`);
       }
 
-      const data: AudioAnalysisResponse = await response.json();
+      const data: BackendAnalysisResponse = await response.json();
       setResult(data);
     } catch (err: any) {
       setError(err.message || 'Failed to connect to VoiceShield Backend.');
@@ -113,11 +149,11 @@ export default function App() {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
             <Lock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>DPDP Zero-Retention Active</span>
+            <span>{result?.security_metadata?.zero_retention_verified ? 'DPDP Zero-Retention Verified' : 'DPDP Status Pending'}</span>
           </div>
           <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
             <Server className="w-3.5 h-3.5 text-indigo-400" />
-            <span>FastAPI v1.0.0</span>
+            <span>Java Backend + Python ML</span>
           </div>
         </div>
       </header>
@@ -246,10 +282,10 @@ export default function App() {
               {result ? (
                 <>
                   {/* Top Alert Banner */}
-                  <div className={`p-5 rounded-2xl border ${getTierColor(result.risk_tier)} flex items-center justify-between`}>
+                  <div className={`p-5 rounded-2xl border ${getTierColor(result.risk_level)} flex items-center justify-between`}>
                     <div className="flex items-center space-x-4">
                       <div className="w-14 h-14 rounded-2xl bg-slate-950/60 flex items-center justify-center border border-white/10 shrink-0">
-                        {result.risk_tier === 'CRITICAL' || result.risk_tier === 'HIGH' ? (
+                        {result.risk_level === 'CRITICAL' || result.risk_level === 'HIGH' ? (
                           <ShieldAlert className="w-7 h-7 text-rose-500 animate-bounce" />
                         ) : (
                           <ShieldCheck className="w-7 h-7 text-emerald-400" />
@@ -257,27 +293,27 @@ export default function App() {
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <span className="text-xl font-bold tracking-tight">Risk Tier: {result.risk_tier}</span>
+                          <span className="text-xl font-bold tracking-tight">Risk Tier: {result.risk_level ?? "N/A"}</span>
                           <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold bg-slate-950/80 border border-white/10">
-                            Score: {result.overall_risk_score}/100
+                            Score: {result.risk_score ?? "N/A"}/100
                           </span>
                         </div>
-                        <p className="text-xs mt-1 text-slate-300 font-medium">Action: {result.action_required}</p>
+                        <p className="text-xs mt-1 text-slate-300 font-medium">Decision: {result.decision ?? "N/A"}</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Recommendations */}
+                  {/* Risk Factors */}
                   <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Actionable Countermeasures</span>
+                      <span>Risk Factors &amp; Reasons</span>
                     </h3>
                     <ul className="space-y-2">
-                      {result.recommendations.map((rec, idx) => (
+                      {(result.reasons ?? []).map((reason, idx) => (
                         <li key={idx} className="text-xs text-slate-300 flex items-start space-x-2 bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/60">
                           <span className="text-indigo-400 font-mono font-bold">{idx + 1}.</span>
-                          <span>{rec}</span>
+                          <span>{reason}</span>
                         </li>
                       ))}
                     </ul>
@@ -292,18 +328,18 @@ export default function App() {
                           <Activity className="w-3.5 h-3.5 text-indigo-400" />
                           <span>AI Deepfake Classifier</span>
                         </span>
-                        <span className={`font-mono text-xs font-bold ${result.classification === 'SPOOF' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {result.classification}
+                        <span className={`font-mono text-xs font-bold ${result.raw_ml_features?.classification === 'SPOOF' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {result.raw_ml_features?.classification ?? "N/A"}
                         </span>
                       </h4>
                       <div className="space-y-1.5 text-xs text-slate-400">
                         <div className="flex justify-between">
                           <span>Synthetic Probability:</span>
-                          <span className="font-mono text-slate-200">{(result.synthetic_probability * 100).toFixed(1)}%</span>
+                          <span className="font-mono text-slate-200">{result.raw_ml_features?.synthetic_probability != null ? (result.raw_ml_features.synthetic_probability * 100).toFixed(1) : "N/A"}%</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Bonafide (Human) Prob:</span>
-                          <span className="font-mono text-slate-200">{(result.bonafide_probability * 100).toFixed(1)}%</span>
+                          <span className="font-mono text-slate-200">{result.raw_ml_features?.bonafide_probability != null ? (result.raw_ml_features.bonafide_probability * 100).toFixed(1) : "N/A"}%</span>
                         </div>
                       </div>
                     </div>
@@ -316,16 +352,16 @@ export default function App() {
                       </h4>
                       <div className="space-y-1.5 text-xs text-slate-400">
                         <div className="flex justify-between">
-                          <span>Pitch F0 Mean:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.mean_pitch_f0_hz} Hz</span>
+                          <span>Prosodic Anomaly:</span>
+                          <span className="font-mono text-slate-200">{result.component_breakdown?.prosodic_anomaly != null ? result.component_breakdown.prosodic_anomaly.toFixed(2) : "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Jitter Perturbation:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.jitter_percent}%</span>
+                          <span>Behavioral Anomaly:</span>
+                          <span className="font-mono text-slate-200">{result.component_breakdown?.behavioral_anomaly != null ? result.component_breakdown.behavioral_anomaly.toFixed(2) : "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Shimmer Perturbation:</span>
-                          <span className="font-mono text-slate-200">{result.prosodic_dynamics.shimmer_percent}%</span>
+                          <span>Contextual Risk:</span>
+                          <span className="font-mono text-slate-200">{result.component_breakdown?.contextual_risk != null ? result.component_breakdown.contextual_risk.toFixed(2) : "N/A"}</span>
                         </div>
                       </div>
                     </div>
@@ -339,15 +375,15 @@ export default function App() {
                       <div className="space-y-1.5 text-xs text-slate-400">
                         <div className="flex justify-between">
                           <span>Spectral Centroid:</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.spectral_centroid_hz} Hz</span>
+                          <span className="font-mono text-slate-200">{result.raw_ml_features?.spectral_metrics?.spectral_centroid_hz ?? "N/A"} Hz</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Spectral Flatness:</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.spectral_flatness}</span>
+                          <span className="font-mono text-slate-200">{result.raw_ml_features?.spectral_metrics?.spectral_flatness ?? "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>High-Freq Ratio (&gt;4kHz):</span>
-                          <span className="font-mono text-slate-200">{result.spectral_biometrics.high_freq_energy_ratio}</span>
+                          <span className="font-mono text-slate-200">{result.raw_ml_features?.spectral_metrics?.high_freq_energy_ratio ?? "N/A"}</span>
                         </div>
                       </div>
                     </div>
@@ -360,13 +396,15 @@ export default function App() {
                       </h4>
                       <div className="space-y-1.5 text-xs text-slate-400">
                         <div className="flex justify-between">
-                          <span>Enrolled Reference:</span>
-                          <span className="font-mono text-slate-200">{result.speaker_verification?.speaker_id || 'None'}</span>
+                          <span>Verification Status:</span>
+                          <span className="font-mono text-slate-200">{result.component_breakdown?.speaker_verification_status ?? 'UNAVAILABLE'}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Identity Match:</span>
+                          <span>Speaker Similarity:</span>
                           <span className="font-mono text-slate-200">
-                            {result.speaker_verification?.verified ? 'VERIFIED MATCH' : 'MISMATCH / UNENROLLED'}
+                            {result.component_breakdown?.speaker_similarity != null
+                              ? result.component_breakdown.speaker_similarity.toFixed(4)
+                              : 'N/A'}
                           </span>
                         </div>
                       </div>
@@ -398,7 +436,7 @@ export default function App() {
                   <span>Real-Time Telephony Call Intercept Stream</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Continuous rolling-window audio inspection over WebSocket (<span className="font-mono text-indigo-300">ws://localhost:8000/api/v1/ws/live-stream</span>)
+                  Continuous rolling-window audio inspection over WebSocket
                 </p>
               </div>
               <button

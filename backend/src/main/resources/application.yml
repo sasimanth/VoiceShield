@@ -34,6 +34,7 @@ voiceshield:
       - "http://localhost:5173"
       - "http://localhost:3000"
       - "http://127.0.0.1:5173"
+      - "http://10.155.84.171:5173"
 
 springdoc:
   api-docs:

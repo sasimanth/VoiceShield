@@ -1,13 +1,17 @@
 import os
 import random
-import soundfile as sf
-from scipy.signal import resample_poly
 import numpy as np
 import torch
 import torch.nn as nn
-import torchaudio
+import soundfile as sf
 from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix
+)
 
 from ml.deepfake_detector.model import DeepfakeAASISTModel
 
@@ -56,38 +60,30 @@ if torch.cuda.is_available():
 # ============================================================
 
 def augment_audio(audio):
-    """
-    Moderate training-time augmentation.
 
-    Augmentations:
-    1. Random gain
-    2. Small Gaussian noise
-    3. Small time shift
-    """
-
-    # --------------------------------------------------------
     # Random gain
-    # --------------------------------------------------------
     if random.random() < 0.5:
         gain = random.uniform(0.85, 1.15)
         audio = audio * gain
 
-    # --------------------------------------------------------
-    # Add small Gaussian noise
-    # --------------------------------------------------------
+    # Gaussian noise
     if random.random() < 0.3:
         noise_level = random.uniform(0.001, 0.005)
         noise = torch.randn_like(audio) * noise_level
         audio = audio + noise
 
-    # --------------------------------------------------------
     # Small time shift
-    # --------------------------------------------------------
     if random.random() < 0.3:
+
         max_shift = int(0.05 * SAMPLE_RATE)
-        shift = random.randint(-max_shift, max_shift)
+
+        shift = random.randint(
+            -max_shift,
+            max_shift
+        )
 
         if shift > 0:
+
             audio = torch.cat(
                 [
                     torch.zeros(shift),
@@ -96,6 +92,7 @@ def augment_audio(audio):
             )
 
         elif shift < 0:
+
             shift = abs(shift)
 
             audio = torch.cat(
@@ -105,10 +102,12 @@ def augment_audio(audio):
                 ]
             )
 
-    # --------------------------------------------------------
     # Prevent clipping
-    # --------------------------------------------------------
-    audio = torch.clamp(audio, -1.0, 1.0)
+    audio = torch.clamp(
+        audio,
+        -1.0,
+        1.0
+    )
 
     return audio
 
@@ -134,10 +133,8 @@ class AudioDataset(Dataset):
 
         self.files = []
 
-        # ----------------------------------------------------
         # Class 0 = bonafide / human
         # Class 1 = spoof / AI
-        # ----------------------------------------------------
 
         class_dirs = {
             "bonafide": 0,
@@ -152,6 +149,7 @@ class AudioDataset(Dataset):
             )
 
             if not os.path.exists(class_path):
+
                 raise FileNotFoundError(
                     f"Missing directory: {class_path}"
                 )
@@ -159,7 +157,12 @@ class AudioDataset(Dataset):
             for filename in os.listdir(class_path):
 
                 if filename.lower().endswith(
-                    (".wav", ".flac", ".mp3", ".m4a")
+                    (
+                        ".wav",
+                        ".flac",
+                        ".mp3",
+                        ".m4a"
+                    )
                 ):
 
                     filepath = os.path.join(
@@ -168,7 +171,10 @@ class AudioDataset(Dataset):
                     )
 
                     self.files.append(
-                        (filepath, label)
+                        (
+                            filepath,
+                            label
+                        )
                     )
 
         random.shuffle(self.files)
@@ -178,56 +184,80 @@ class AudioDataset(Dataset):
         )
 
     def __len__(self):
+
         return len(self.files)
 
     def load_audio(self, filepath):
-        # ----------------------------------------------------
-        # Load WAV / FLAC using SoundFile
-        # This avoids the TorchCodec problem in torchaudio
-        # ----------------------------------------------------
 
-        audio_data, sr = sf.read(filepath, dtype="float32")
+        # ====================================================
+        # LOAD AUDIO USING SOUNDFILE
+        # This avoids torchaudio/TorchCodec DLL problems
+        # ====================================================
 
-        # ----------------------------------------------------
-        # Convert stereo -> mono
-        # ----------------------------------------------------
+        audio, sr = sf.read(
+            filepath,
+            dtype="float32",
+            always_2d=False
+        )
 
-        if audio_data.ndim > 1:
-            audio_data = np.mean(audio_data, axis=1)
+        # Convert NumPy array -> PyTorch tensor
+        waveform = torch.from_numpy(
+            np.asarray(audio, dtype=np.float32)
+        )
 
-        waveform = torch.from_numpy(audio_data)
-        # ----------------------------------------------------
-        # Resample if required
-        # ----------------------------------------------------
+        # ====================================================
+        # CONVERT STEREO -> MONO
+        # ====================================================
 
-        if sr != self.sample_rate:
-            waveform = torch.from_numpy(
-                resample_poly(
-                    waveform.numpy(),
-                    self.sample_rate,
-                    sr
-                ).astype(np.float32)
+        if waveform.ndim == 2:
+
+            waveform = waveform.mean(
+                dim=1
             )
 
-        waveform = waveform.float()
+        # ====================================================
+        # RESAMPLE IF REQUIRED
+        # ====================================================
 
-        # ----------------------------------------------------
-        # Normalize
-        # ----------------------------------------------------
+        if sr != self.sample_rate:
+
+            # Linear interpolation resampling
+            old_length = waveform.shape[0]
+
+            new_length = int(
+                old_length *
+                self.sample_rate /
+                sr
+            )
+
+            waveform = torch.nn.functional.interpolate(
+                waveform.view(1, 1, -1),
+                size=new_length,
+                mode="linear",
+                align_corners=False
+            ).view(-1)
+
+        # ====================================================
+        # NORMALIZE
+        # ====================================================
+
+        waveform = waveform.float()
 
         max_value = waveform.abs().max()
 
         if max_value > 0:
+
             waveform = waveform / max_value
 
         return waveform
+
     def fixed_length(self, waveform):
 
         length = waveform.shape[0]
 
-        # ----------------------------------------------------
-        # If audio is longer than required
-        # ----------------------------------------------------
+        # ====================================================
+        # AUDIO LONGER THAN REQUIRED
+        # ====================================================
 
         if length > self.num_samples:
 
@@ -248,13 +278,16 @@ class AudioDataset(Dataset):
                 start:start + self.num_samples
             ]
 
-        # ----------------------------------------------------
-        # If audio is shorter than required
-        # ----------------------------------------------------
+        # ====================================================
+        # AUDIO SHORTER THAN REQUIRED
+        # ====================================================
 
         elif length < self.num_samples:
 
-            padding = self.num_samples - length
+            padding = (
+                self.num_samples -
+                length
+            )
 
             waveform = torch.nn.functional.pad(
                 waveform,
@@ -269,21 +302,27 @@ class AudioDataset(Dataset):
 
         try:
 
-            waveform = self.load_audio(filepath)
+            waveform = self.load_audio(
+                filepath
+            )
 
-            waveform = self.fixed_length(waveform)
+            waveform = self.fixed_length(
+                waveform
+            )
 
-            # ------------------------------------------------
-            # Apply augmentation ONLY during training
-            # ------------------------------------------------
-
+            # Augmentation only during training
             if self.training:
 
-                waveform = augment_audio(waveform)
+                waveform = augment_audio(
+                    waveform
+                )
 
-            return waveform, torch.tensor(
-                label,
-                dtype=torch.long
+            return (
+                waveform,
+                torch.tensor(
+                    label,
+                    dtype=torch.long
+                )
             )
 
         except Exception as e:
@@ -296,34 +335,57 @@ class AudioDataset(Dataset):
                 f"Error: {e}"
             )
 
-            # Return silence instead of crashing training
-            waveform = torch.zeros(
-                self.num_samples,
-                dtype=torch.float32
-            )
+            # IMPORTANT:
+            # Do not silently train on invalid audio.
+            # Raise the error instead.
 
-            return waveform, torch.tensor(
-                label,
-                dtype=torch.long
-            )
+            raise
 
 
 # ============================================================
 # CREATE DATASETS
 # ============================================================
 
-print("\n===============================================")
-print("VOICE SHIELD - EXPERIMENT 4")
-print("===============================================")
+print(
+    "\n==============================================="
+)
 
-print(f"Device: {DEVICE}")
-print(f"Sample Rate: {SAMPLE_RATE}")
-print(f"Input Samples: {NUM_SAMPLES}")
-print(f"Batch Size: {BATCH_SIZE}")
-print(f"Epochs: {EPOCHS}")
-print(f"Learning Rate: {LEARNING_RATE}")
+print(
+    "VOICE SHIELD - EXPERIMENT 4"
+)
 
-print("\nLoading datasets...")
+print(
+    "==============================================="
+)
+
+print(
+    f"Device: {DEVICE}"
+)
+
+print(
+    f"Sample Rate: {SAMPLE_RATE}"
+)
+
+print(
+    f"Input Samples: {NUM_SAMPLES}"
+)
+
+print(
+    f"Batch Size: {BATCH_SIZE}"
+)
+
+print(
+    f"Epochs: {EPOCHS}"
+)
+
+print(
+    f"Learning Rate: {LEARNING_RATE}"
+)
+
+print(
+    "\nLoading datasets..."
+)
+
 
 train_dataset = AudioDataset(
     TRAIN_DIR,
@@ -363,7 +425,9 @@ dev_loader = DataLoader(
 # MODEL
 # ============================================================
 
-print("\nCreating model...")
+print(
+    "\nCreating model..."
+)
 
 model = DeepfakeAASISTModel()
 
@@ -373,13 +437,6 @@ model = model.to(DEVICE)
 # ============================================================
 # CLASS WEIGHTS
 # ============================================================
-
-# Train:
-# Bonafide = 1200
-# Spoof    = 800
-#
-# Slightly increase spoof importance because it is the
-# minority class.
 
 class_weights = torch.tensor(
     [1.0, 1.5],
@@ -412,11 +469,17 @@ os.makedirs(
 
 for epoch in range(EPOCHS):
 
-    print("\n-----------------------------------------------")
+    print(
+        "\n-----------------------------------------------"
+    )
+
     print(
         f"Epoch {epoch + 1}/{EPOCHS}"
     )
-    print("-----------------------------------------------")
+
+    print(
+        "-----------------------------------------------"
+    )
 
     # ========================================================
     # TRAIN
@@ -425,6 +488,7 @@ for epoch in range(EPOCHS):
     model.train()
 
     running_loss = 0.0
+
     train_predictions = []
     train_labels = []
 
@@ -437,7 +501,9 @@ for epoch in range(EPOCHS):
 
         optimizer.zero_grad()
 
-        logits, embeddings = model(audio)
+        logits, embeddings = model(
+            audio
+        )
 
         loss = criterion(
             logits,
@@ -456,11 +522,15 @@ for epoch in range(EPOCHS):
         )
 
         train_predictions.extend(
-            predictions.detach().cpu().numpy()
+            predictions.detach()
+            .cpu()
+            .numpy()
         )
 
         train_labels.extend(
-            labels.detach().cpu().numpy()
+            labels.detach()
+            .cpu()
+            .numpy()
         )
 
         if (
@@ -501,7 +571,9 @@ for epoch in range(EPOCHS):
             audio = audio.to(DEVICE)
             labels = labels.to(DEVICE)
 
-            logits, embeddings = model(audio)
+            logits, embeddings = model(
+                audio
+            )
 
             loss = criterion(
                 logits,
@@ -556,7 +628,9 @@ for epoch in range(EPOCHS):
     # PRINT RESULTS
     # ========================================================
 
-    print("\nResults:")
+    print(
+        "\nResults:"
+    )
 
     print(
         f"Train Loss     : {train_loss:.4f}"
@@ -593,21 +667,28 @@ for epoch in range(EPOCHS):
 
     cm = confusion_matrix(
         dev_labels,
-        dev_predictions
+        dev_predictions,
+        labels=[0, 1]
     )
 
-    print("\nConfusion Matrix:")
+    print(
+        "\nConfusion Matrix:"
+    )
 
     print(
         "              Human   Spoof"
     )
 
     print(
-        f"Human         {cm[0][0]:5d}   {cm[0][1]:5d}"
+        f"Human         "
+        f"{cm[0][0]:5d}   "
+        f"{cm[0][1]:5d}"
     )
 
     print(
-        f"Spoof         {cm[1][0]:5d}   {cm[1][1]:5d}"
+        f"Spoof         "
+        f"{cm[1][0]:5d}   "
+        f"{cm[1][1]:5d}"
     )
 
 
@@ -638,9 +719,17 @@ for epoch in range(EPOCHS):
 # FINAL RESULT
 # ============================================================
 
-print("\n===============================================")
-print("EXPERIMENT 4 TRAINING COMPLETE")
-print("===============================================")
+print(
+    "\n==============================================="
+)
+
+print(
+    "EXPERIMENT 4 TRAINING COMPLETE"
+)
+
+print(
+    "==============================================="
+)
 
 print(
     f"Best Dev Accuracy: {best_accuracy:.4f}"
@@ -654,4 +743,6 @@ print(
     f"Model saved to   : {CHECKPOINT_PATH}"
 )
 
-print("===============================================")
+print(
+    "==============================================="
+)

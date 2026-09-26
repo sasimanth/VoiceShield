@@ -102,6 +102,8 @@ public class AudioAnalysisController {
             String sessionId = "sess-" + UUID.randomUUID().toString().substring(0, 8);
             return ResponseEntity.ok(new AudioAnalysisResponse(riskResult, sessionId, mlFeatures));
 
+                } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
