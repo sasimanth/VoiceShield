@@ -56,7 +56,7 @@ interface BackendAnalysisResponse {
   };
 }
 
-const BACKEND_URL = 'http://localhost:8080/api/v1';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080/api/v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'live' | 'enroll'>('upload');
