@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import io
+import os
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -59,42 +60,67 @@ DEEPFAKE_CHECKPOINT = (
     / "experiment4_best_model.pth"
 )
 
-
 # ---------------------------------------------------------------------
 # Deepfake detector
 # ---------------------------------------------------------------------
 
-try:
-    deepfake_detector = DeepfakeDetector(
-        checkpoint_path=str(DEEPFAKE_CHECKPOINT)
-    )
+deepfake_detector = None
+deepfake_model_status = "NOT_LOADED"
+deepfake_model_error = None
 
-    if deepfake_detector.model_loaded:
-        deepfake_model_status = "READY"
-    else:
-        deepfake_model_status = "BASELINE_INITIALIZED"
 
-    deepfake_model_error = None
+def get_deepfake_detector() -> DeepfakeDetector:
+    """
+    Load the deepfake model only when inference is requested.
+    This reduces startup memory usage on low-memory deployments.
+    """
 
-except Exception as exc:
-    deepfake_detector = None
-    deepfake_model_status = "UNAVAILABLE"
-    deepfake_model_error = str(exc)
+    global deepfake_detector
+    global deepfake_model_status
+    global deepfake_model_error
 
+    if deepfake_detector is None:
+        try:
+            deepfake_detector = DeepfakeDetector(
+                checkpoint_path=str(DEEPFAKE_CHECKPOINT)
+            )
+
+            if deepfake_detector.model_loaded:
+                deepfake_model_status = "READY"
+            else:
+                deepfake_model_status = "BASELINE_INITIALIZED"
+
+            deepfake_model_error = None
+
+        except Exception as exc:
+            deepfake_detector = None
+            deepfake_model_status = "UNAVAILABLE"
+            deepfake_model_error = str(exc)
+
+            raise
+
+    return deepfake_detector
 
 # ---------------------------------------------------------------------
 # ECAPA speaker embedding model
 # ---------------------------------------------------------------------
 
-try:
-    embedder = ECAPASpeakerEmbedder()
-    speaker_model_status = "READY"
-    speaker_model_error = None
+ENABLE_ECAPA = os.getenv("ENABLE_ECAPA", "true").lower() == "true"
 
-except Exception as exc:
+if ENABLE_ECAPA:
+    try:
+        embedder = ECAPASpeakerEmbedder()
+        speaker_model_status = "READY"
+        speaker_model_error = None
+
+    except Exception as exc:
+        embedder = None
+        speaker_model_status = "UNAVAILABLE"
+        speaker_model_error = str(exc)
+else:
     embedder = None
-    speaker_model_status = "UNAVAILABLE"
-    speaker_model_error = str(exc)
+    speaker_model_status = "DISABLED"
+    speaker_model_error = "ECAPA disabled by configuration."
 
 
 # ---------------------------------------------------------------------
@@ -217,12 +243,13 @@ async def ml_predict(
     business logic, speaker verification, and final risk decisions.
     """
 
-    if deepfake_detector is None:
+    try:
+        detector = get_deepfake_detector()
+    except Exception:
         raise HTTPException(
-            status_code=503,
-            detail="Deepfake detection model is unavailable.",
-        )
-
+        status_code=503,
+        detail="Deepfake detection model is unavailable.",
+    )
     if not file.filename:
         raise HTTPException(
             status_code=400,
@@ -247,7 +274,7 @@ async def ml_predict(
             )
 
         # Run the actual trained deepfake detector.
-        result = deepfake_detector.predict(audio_16k)
+        result = detector.predict(audio_16k)
 
         return {
             "success": True,
