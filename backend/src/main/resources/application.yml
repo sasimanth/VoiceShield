@@ -42,4 +42,4 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.voiceshield: DEBUG
+    com.voiceshield: INFO
