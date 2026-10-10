@@ -206,6 +206,7 @@ def health() -> dict[str, Any]:
                 if DEEPFAKE_CHECKPOINT.exists()
                 else "not_found"
             ),
+            "error": deepfake_model_error,
             "device": (
                 str(deepfake_detector.device)
                 if deepfake_detector is not None
