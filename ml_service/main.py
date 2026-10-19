@@ -107,20 +107,40 @@ def get_deepfake_detector() -> DeepfakeDetector:
 
 ENABLE_ECAPA = os.getenv("ENABLE_ECAPA", "true").lower() == "true"
 
-if ENABLE_ECAPA:
-    try:
-        embedder = ECAPASpeakerEmbedder()
-        speaker_model_status = "READY"
-        speaker_model_error = None
+# Keep ECAPA unloaded during service startup. It is loaded only when
+# /speaker/embed is called, to reduce startup memory usage.
+embedder = None
 
-    except Exception as exc:
-        embedder = None
-        speaker_model_status = "UNAVAILABLE"
-        speaker_model_error = str(exc)
+if ENABLE_ECAPA:
+    speaker_model_status = "NOT_LOADED"
+    speaker_model_error = None
 else:
-    embedder = None
     speaker_model_status = "DISABLED"
     speaker_model_error = "ECAPA disabled by configuration."
+
+
+def get_speaker_embedder() -> ECAPASpeakerEmbedder | None:
+    """Load ECAPA only when speaker embedding is requested."""
+    global embedder
+    global speaker_model_status
+    global speaker_model_error
+
+    if not ENABLE_ECAPA:
+        return None
+
+    if embedder is None:
+        try:
+            speaker_model_status = "LOADING"
+            embedder = ECAPASpeakerEmbedder()
+            speaker_model_status = "READY"
+            speaker_model_error = None
+        except Exception as exc:
+            embedder = None
+            speaker_model_status = "UNAVAILABLE"
+            speaker_model_error = str(exc)
+            raise
+
+    return embedder
 
 
 # ---------------------------------------------------------------------
@@ -223,6 +243,7 @@ def health() -> dict[str, Any]:
                 if embedder is not None
                 else "unavailable"
             ),
+            "error": speaker_model_error,
         },
     }
 
@@ -339,10 +360,19 @@ async def speaker_embed(
     - final MATCH/MISMATCH decision
     """
 
-    if embedder is None:
+    try:
+        speaker_embedder = get_speaker_embedder()
+    except Exception as exc:
+        print(f"[ERROR] ECAPA model loading failed: {exc}")
         raise HTTPException(
             status_code=503,
-            detail="ECAPA model is unavailable.",
+            detail="ECAPA model could not be loaded.",
+        ) from exc
+
+    if speaker_embedder is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ECAPA is disabled by configuration.",
         )
 
     if not file.filename:
@@ -360,7 +390,7 @@ async def speaker_embed(
                 detail="Uploaded audio file is empty.",
             )
 
-        embedding = embedder.generate_embedding(audio_bytes)
+        embedding = speaker_embedder.generate_embedding(audio_bytes)
 
         # Validate exact ECAPA dimension.
         if embedding.shape[0] != EMBEDDING_DIMENSION:
