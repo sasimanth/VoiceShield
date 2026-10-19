@@ -185,14 +185,23 @@ Map<String, Object> response =
                         }
                     }
             );
+
 byte[] responseBytes = restClient.post()
         .uri("/speaker/embed")
         .contentType(MediaType.MULTIPART_FORM_DATA)
         .accept(MediaType.APPLICATION_JSON)
         .body(body)
-        .exchange((request, response) ->
-                response.getBody().readAllBytes()
-        );
+        .exchange((request, response) -> {
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new IllegalStateException(
+                        "ECAPA service returned HTTP status "
+                                + response.getStatusCode().value()
+                                + "."
+                );
+            }
+
+            return response.getBody().readAllBytes();
+        });
 
 if (responseBytes == null || responseBytes.length == 0) {
     throw new IllegalStateException(

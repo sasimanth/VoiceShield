@@ -63,3 +63,9 @@ dependency-reduced-pom.xml
 # VoiceShield local datasets and test recordings
 datasets/
 test_audio/
+
+# Generated TypeScript build information
+frontend/tsconfig.tsbuildinfo
+
+# Local ML service backups
+ml_service/*.backup
